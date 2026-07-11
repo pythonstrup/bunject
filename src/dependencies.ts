@@ -154,6 +154,8 @@ export function isConstructible(value: unknown): value is InjectableClass<any> {
   }
 }
 
+const constructibleTokens = new WeakSet<Function>();
+
 export function injectionDependencies(
   inject: readonly AnyDependency[] | undefined,
   owner: AnyToken,
@@ -184,15 +186,21 @@ export function injectionDependencies(
 }
 
 export function assertToken(value: unknown, owner?: AnyToken): asserts value is AnyToken {
-  if (typeof value !== "symbol" && !isConstructible(value)) {
-    throw registrationError(
-      "INVALID_TOKEN",
-      owner
-        ? `inject for ${tokenName(owner)} contains an invalid token.`
-        : "A token must be a class or a token() symbol.",
-      owner,
-    );
+  if (typeof value === "symbol") return;
+  if (typeof value === "function") {
+    if (constructibleTokens.has(value)) return;
+    if (isConstructible(value)) {
+      constructibleTokens.add(value);
+      return;
+    }
   }
+  throw registrationError(
+    "INVALID_TOKEN",
+    owner
+      ? `inject for ${tokenName(owner)} contains an invalid token.`
+      : "A token must be a class or a token() symbol.",
+    owner,
+  );
 }
 
 function assertDependency(

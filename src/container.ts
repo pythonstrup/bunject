@@ -405,6 +405,12 @@ export class Container implements Disposable, AsyncDisposable {
             "Registration modules must be synchronous.",
           );
         }
+        if (result !== undefined) {
+          throw registrationError(
+            "INVALID_MODULE",
+            "Registration modules must return undefined.",
+          );
+        }
       }
       if (staging.#registrations.size === 0) return this;
 
@@ -510,7 +516,9 @@ export class Container implements Disposable, AsyncDisposable {
     try {
       if (optional && !this.#lookup(token)) return undefined;
       if (captors.length === 0) {
-        this.#validateGraph(token, true, false, undefined, ancestry);
+        if (!this.#validatedSync.has(token)) {
+          this.#validateGraph(token, true, false, undefined, ancestry);
+        }
       }
       else {
         for (const constraint of captors) {
@@ -591,7 +599,9 @@ export class Container implements Disposable, AsyncDisposable {
     try {
       if (optional && !this.#lookup(token)) return undefined;
       if (captors.length === 0) {
-        this.#validateGraph(token, false, false, undefined, ancestry);
+        if (!this.#validatedAsync.has(token)) {
+          this.#validateGraph(token, false, false, undefined, ancestry);
+        }
       }
       else {
         for (const constraint of captors) {
@@ -643,7 +653,12 @@ export class Container implements Disposable, AsyncDisposable {
     const locked = this.#beginResolution();
     try {
       if (captors.length === 0) {
-        this.#validateGraph(token, true, true, undefined, ancestry, chained);
+        const validated = chained
+          ? this.#validatedChainedAllSync
+          : this.#validatedAllSync;
+        if (!validated.has(token)) {
+          this.#validateGraph(token, true, true, undefined, ancestry, chained);
+        }
       } else {
         for (const constraint of captors) {
           this.#validateGraph(token, true, true, constraint, ancestry, chained);
@@ -721,7 +736,12 @@ export class Container implements Disposable, AsyncDisposable {
     const locked = this.#beginResolution();
     try {
       if (captors.length === 0) {
-        this.#validateGraph(token, false, true, undefined, ancestry, chained);
+        const validated = chained
+          ? this.#validatedChainedAllAsync
+          : this.#validatedAllAsync;
+        if (!validated.has(token)) {
+          this.#validateGraph(token, false, true, undefined, ancestry, chained);
+        }
       } else {
         for (const constraint of captors) {
           this.#validateGraph(token, false, true, constraint, ancestry, chained);
@@ -2071,6 +2091,9 @@ export class Container implements Disposable, AsyncDisposable {
       consumeRejectedPromise(result);
       throw new TypeError("onActivation must be synchronous.");
     }
+    if (result !== undefined) {
+      throw new TypeError("onActivation must return undefined.");
+    }
   }
 
   #runSyncProvider<T>(
@@ -2564,6 +2587,8 @@ export class Container implements Disposable, AsyncDisposable {
             if (resource.disposeIsHook) {
               throw new TypeError("onDisposal must be synchronous.");
             }
+          } else if (resource.disposeIsHook && result !== undefined) {
+            throw new TypeError("onDisposal must return undefined.");
           }
         } catch (error) {
           appendDisposalError(operation.errors, error);
@@ -2649,7 +2674,10 @@ export class Container implements Disposable, AsyncDisposable {
               "onDisposalAsync must return a Promise-like value.",
             );
           }
-          await result;
+          const outcome = await result;
+          if (resource.disposeAsyncIsHook && outcome !== undefined) {
+            throw new TypeError("onDisposalAsync must resolve to undefined.");
+          }
         } else {
           const dispose = checkedDisposalMethod(
             resource.dispose,
@@ -2672,6 +2700,8 @@ export class Container implements Disposable, AsyncDisposable {
               throw new TypeError("onDisposal must be synchronous.");
             }
             consumeRejectedPromise(result);
+          } else if (resource.disposeIsHook && result !== undefined) {
+            throw new TypeError("onDisposal must return undefined.");
           }
         }
       } catch (error) {

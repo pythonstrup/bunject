@@ -11,7 +11,7 @@ Ecosystem adoption and battle-testing remain external evidence.
 ## Current evidence
 
 - Bun 1.3.14 and minimum Bun 1.3.10 are configured.
-- The complete local merge gate passes: 175 tests,
+- The complete local merge gate passes: 179 tests,
   99.32% overall lines, and 100% lines in every source module.
 - The verified runtime, public API, packaging, compatibility, and harness
   baseline is committed through `5e3ea44`.
@@ -31,13 +31,20 @@ Ecosystem adoption and battle-testing remain external evidence.
 - Packed consumers now run the same concurrent async-context, error-path,
   singleton-coalescing, scope, and disposal scenario under Bun and Node. Deno
   2.0.0 and 2.8.1 pass type, standard-decorator, and runtime checks locally.
-- Bun 1.3.10 passes the source typecheck, all 175 tests, and the installed
+- Bun 1.3.10 passes the source typecheck, all 179 tests, and the installed
   packed-consumer smoke locally.
 - Container and Resolver optional sync/async resolution preserve every visible
   provider failure and track absent dynamic edges for cache invalidation.
 - Opt-in chained multi-resolution aggregates child-to-root binding sets across
   Container, Resolver, descriptors, validation, inspection, and mutation while
   nearest-set shadowing remains the default.
+- Exact-case, peer-free five-process A/B measurements reduced the
+  warm-singleton median from 138.84 ns to 62.11 ns and the transient-class
+  median from 217.01 ns to 150.16 ns on Bun 1.3.14; both before/after ranges
+  were disjoint.
+- Registration now rejects null class dependency tuples and borrowed-provider
+  options, while activation, registration-module, and disposal callbacks enforce
+  their declared runtime return contracts.
 - Every exported declaration and public method group has IDE-visible TSDoc, and
   the Bun HTTP request-scope example is type-checked and executable.
 - The agent map, architecture record, active plan, and mechanical harness check
@@ -90,17 +97,25 @@ Ecosystem adoption and battle-testing remain external evidence.
   while remaining small enough to catch material growth.
 - Keep each source module's `@ts-self-types` link aligned with its emitted
   sibling declaration because Deno does not infer adjacent `.d.ts` files.
+- Cache only successful class-token validation by identity; once accepted, a
+  token remains a stable map identity even if a revocable wrapper later loses
+  construction access. Class providers still recheck constructibility whenever
+  they are registered.
+- Compare hot paths with exact-case filters in fresh processes and report the
+  median and spread. Mixed-case and peer ratios remain informational because
+  JIT specialization changes their results materially.
+- Enforce `undefined` results from activation, synchronous disposal, and
+  registration-module callbacks, and an `undefined` fulfillment from async
+  disposal callbacks, matching the public callback types.
 
 ## In progress
 
-- Profile the measured resolution hot path and pursue only repeatable,
-  correctness-preserving improvements justified by the benchmark harness.
+- Verify the profile-guided fast paths and runtime-boundary hardening across the
+  complete current/minimum Bun, Node package, Deno, type, API, size, and
+  repository gates, then commit the new baseline.
 
 ## Remaining work
 
-- After modularization is verified and committed, profile the measured
-  resolution hot path and pursue only repeatable, correctness-preserving
-  improvements justified by the benchmark harness.
 - Add token-level observers only after a concrete instrumentation consumer
   defines cache-hit, hierarchy, async, cardinality, and removal semantics.
 - Compare declarations against the previous published tarball after the first
@@ -233,3 +248,17 @@ Ecosystem adoption and battle-testing remain external evidence.
 - 2026-07-11: committed the verified modular runtime and aggregate package
   harness baseline as `5e3ea44`; `index.ts` is now a 61-line explicit public
   facade over five internal modules.
+- 2026-07-11: profiled the public sync path with Bun's native CPU profiler and
+  independently repeated exact-case A/B runs in five fresh processes per
+  version. Positive token validation caching, empty-root path construction, and
+  validation-set fast gates reduced warm singleton by 55.3% and transient class
+  by 30.8% without changing provider construction checks.
+- 2026-07-11: an independent maturity audit found and closed null `inject`,
+  borrowed-provider option, and callback-return validation gaps; added focused
+  positive and negative runtime evidence without a dependency or public API
+  addition.
+- 2026-07-11: passed the complete 179-test gate with 99.32% overall line
+  coverage and 100% lines in every source module, all 179 tests plus package
+  and size checks on Bun 1.3.10, packed Bun/Node consumption, Deno 2.0.0 and
+  2.8.1 type/runtime smoke, TypeScript current and 5.4, isolated and peer
+  benchmarks, and final independent contract, harness, and minimality reviews.

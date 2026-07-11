@@ -11,6 +11,9 @@ with modern Node.js and Deno 2 through Node compatibility APIs.
 
 ## Install
 
+Bunject 0.1.0 is not published yet. These commands become available after the
+first npm release; repository development instructions are in `AGENTS.md`.
+
 ```sh
 bun add bunject
 # or: npm install bunject
@@ -232,19 +235,20 @@ container.register(CLIENT, {
 await using container = new Container();
 ```
 
-`onActivation` is synchronous and runs once for each successfully created
-class or factory value, before caching. Class and factory results that implement
-`Symbol.dispose` or `Symbol.asyncDispose` are owned by the activation scope and
-disposed in reverse acquisition order. For third-party resources, providers may
-declare `onDisposal` and/or `onDisposalAsync`; when present, that explicit pair
-replaces the resource's Symbol protocol. `disposeAsync()` prefers the async
-callback and falls back to the sync callback. `onDisposal` must not return a
-Promise; use `onDisposalAsync` for asynchronous work. `dispose()` rejects an
-async-only tree before cleanup begins. `useValue` and alias results are borrowed
-and never own cleanup. Disposal continues after failures and reports an
-`AggregateError`. When providers return the same object, the first captured
-ownership contract wins. A value whose activation hook fails is not cached, but
-remains owned and is cleaned when its activation container is disposed.
+`onActivation` is synchronous, returns `undefined`, and runs once for each
+successfully created class or factory value, before caching. Class and factory
+results that implement `Symbol.dispose` or `Symbol.asyncDispose` are owned by
+the activation scope and disposed in reverse acquisition order. For third-party
+resources, providers may declare `onDisposal` and/or `onDisposalAsync`; when
+present, that explicit pair replaces the resource's Symbol protocol.
+`disposeAsync()` prefers the async callback and falls back to the sync callback.
+`onDisposal` returns `undefined`; use `onDisposalAsync`, which resolves to
+`undefined`, for asynchronous work. `dispose()` rejects an async-only tree
+before cleanup begins. `useValue` and alias results are borrowed and never own
+cleanup. Disposal continues after failures and reports an `AggregateError`.
+When providers return the same object, the first captured ownership contract
+wins. A value whose activation hook fails is not cached, but remains owned and
+is cleaned when its activation container is disposed.
 
 ## Modules, inspection, and controlled mutation
 
@@ -269,8 +273,9 @@ container.rebind(CONFIG, { useValue: testConfig });
 container.unregister(CONFIG);
 ```
 
-`load()` stages all registrations and commits them atomically. Its restricted
-registry cannot resolve services or escape to lifecycle APIs. `inspect()`
+`load()` stages all registrations and commits them atomically. Modules are
+synchronous and return `undefined`; their restricted registry cannot resolve
+services or escape to lifecycle APIs. `inspect()`
 returns a frozen graph without construction; `validate()` performs the same
 sync/async, missing, cycle, ambiguity, and lifetime checks used by resolution.
 Chained validation is available only with `{ all: true, chained: true }`.

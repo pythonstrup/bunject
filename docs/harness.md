@@ -27,12 +27,14 @@ signals are:
 - an executable, type-checked Bun HTTP request-scope example;
 - package-lint, aggregate emitted-declaration hash, and aggregate emitted
   JavaScript/declaration compressed-size gates;
-- peer benchmarks for performance evidence;
+- isolated Bunject benchmarks plus informational peer context for performance
+  evidence;
 - `harness:check` for repository maps, links, and design invariants.
 
 `bun run check` is the complete local merge gate. It must produce actionable
 errors without requiring a human to interpret hidden state. Run the Deno smoke
-when Deno is installed, and run peer benchmarks when a hot path changes.
+when Deno is installed, and run isolated Bunject benchmarks when a hot path
+changes.
 
 ## Knowledge and plan discipline
 

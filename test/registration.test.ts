@@ -114,6 +114,30 @@ describe("registration validation", () => {
       {
         code: "INVALID_PROVIDER",
         register: (container) =>
+          (container as any).register(TOKEN, {
+            inject: null,
+            useClass: class Service {},
+          }),
+      },
+      {
+        code: "INVALID_PROVIDER",
+        register: (container) =>
+          (container as any).register(TOKEN, {
+            scope: "singleton",
+            useValue: 1,
+          }),
+      },
+      {
+        code: "INVALID_PROVIDER",
+        register: (container) =>
+          (container as any).register(TOKEN, {
+            inject: [],
+            useExisting: TOKEN,
+          }),
+      },
+      {
+        code: "INVALID_PROVIDER",
+        register: (container) =>
           (container as any).register(TOKEN, { useFactory: 1 }),
       },
       {
@@ -185,6 +209,43 @@ describe("registration validation", () => {
         token: TOKEN,
       });
     }
+  });
+
+  test("keeps accepted token identity while rechecking class providers", () => {
+    class Service {}
+    const { proxy, revoke } = Proxy.revocable(Service, {});
+    const OTHER = token<Service>("OTHER");
+    const service = new Service();
+    const container = new Container();
+    container.register(proxy, { useValue: service });
+
+    revoke();
+
+    expect(container.resolve(proxy)).toBe(service);
+    expect(container.unregister(proxy)).toBe(true);
+    expect(() => container.resolve(proxy)).toThrow(
+      expect.objectContaining({
+        code: "NOT_FOUND",
+        path: [proxy],
+      }),
+    );
+    expect(() =>
+      container.register(OTHER, {
+        inject: [],
+        useClass: proxy,
+      }),
+    ).toThrow(expect.objectContaining({ code: "INVALID_PROVIDER" }));
+
+    const unusualName = new Proxy(class {}, {
+      get(target, property, receiver) {
+        return property === "name"
+          ? Symbol("unusual")
+          : Reflect.get(target, property, receiver);
+      },
+    });
+    expect(() => new Container().resolve(unusualName)).toThrow(
+      expect.objectContaining({ code: "NOT_FOUND" }),
+    );
   });
 
   test("validates decorator options when the decorator is created", () => {

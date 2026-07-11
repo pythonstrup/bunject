@@ -1,8 +1,4 @@
-import "reflect-metadata";
-import { asClass, createContainer as createAwilixContainer } from "awilix";
-import { Container as InversifyContainer } from "inversify";
 import { bench, do_not_optimize, run, summary } from "mitata";
-import { container as tsyringeRoot } from "tsyringe";
 import { Container, token } from "../src/index";
 
 class Singleton {}
@@ -35,52 +31,82 @@ bunject.register(REQUEST_VALUE, {
   useFactory: () => ({}),
 });
 
-const inversify = new InversifyContainer();
-inversify.bind(Singleton).toSelf().inSingletonScope();
-inversify.bind(Transient).toSelf().inTransientScope();
-inversify.get(Singleton);
+const filterSource = Bun.argv[2];
+const filter = filterSource === undefined ? /.*/ : new RegExp(filterSource);
+const includePeers = [
+  "inversify / warm singleton",
+  "tsyringe / warm singleton",
+  "awilix / warm singleton",
+  "inversify / transient class",
+  "tsyringe / transient class",
+  "awilix / transient class",
+].some((name) => filter.test(name));
 
-const tsyringe = tsyringeRoot.createChildContainer();
-tsyringe.registerSingleton(Singleton, Singleton);
-tsyringe.register(Transient, { useClass: Transient });
-tsyringe.resolve(Singleton);
-
-const awilix = createAwilixContainer();
-awilix.register({
-  singleton: asClass(Singleton).singleton(),
-  transient: asClass(Transient).transient(),
-});
-awilix.resolve<Singleton>("singleton");
-
-summary(() => {
+const registerBunjectSingleton = (): void => {
   bench("bunject / warm singleton", () =>
     do_not_optimize(bunject.resolve(Singleton)),
   );
-  bench("inversify / warm singleton", () =>
-    do_not_optimize(inversify.get(Singleton)),
-  );
-  bench("tsyringe / warm singleton", () =>
-    do_not_optimize(tsyringe.resolve(Singleton)),
-  );
-  bench("awilix / warm singleton", () =>
-    do_not_optimize(awilix.resolve<Singleton>("singleton")),
-  );
-});
+};
 
-summary(() => {
+const registerBunjectTransient = (): void => {
   bench("bunject / transient class", () =>
     do_not_optimize(bunject.resolve(Transient)),
   );
-  bench("inversify / transient class", () =>
-    do_not_optimize(inversify.get(Transient)),
-  );
-  bench("tsyringe / transient class", () =>
-    do_not_optimize(tsyringe.resolve(Transient)),
-  );
-  bench("awilix / transient class", () =>
-    do_not_optimize(awilix.resolve<Transient>("transient")),
-  );
-});
+};
+
+if (includePeers) {
+  await import("reflect-metadata");
+  const [awilixModule, inversifyModule, tsyringeModule] = await Promise.all([
+    import("awilix"),
+    import("inversify"),
+    import("tsyringe"),
+  ]);
+  const inversify = new inversifyModule.Container();
+  inversify.bind(Singleton).toSelf().inSingletonScope();
+  inversify.bind(Transient).toSelf().inTransientScope();
+  inversify.get(Singleton);
+
+  const tsyringe = tsyringeModule.container.createChildContainer();
+  tsyringe.registerSingleton(Singleton, Singleton);
+  tsyringe.register(Transient, { useClass: Transient });
+  tsyringe.resolve(Singleton);
+
+  const awilix = awilixModule.createContainer();
+  awilix.register({
+    singleton: awilixModule.asClass(Singleton).singleton(),
+    transient: awilixModule.asClass(Transient).transient(),
+  });
+  awilix.resolve<Singleton>("singleton");
+
+  summary(() => {
+    registerBunjectSingleton();
+    bench("inversify / warm singleton", () =>
+      do_not_optimize(inversify.get(Singleton)),
+    );
+    bench("tsyringe / warm singleton", () =>
+      do_not_optimize(tsyringe.resolve(Singleton)),
+    );
+    bench("awilix / warm singleton", () =>
+      do_not_optimize(awilix.resolve<Singleton>("singleton")),
+    );
+  });
+
+  summary(() => {
+    registerBunjectTransient();
+    bench("inversify / transient class", () =>
+      do_not_optimize(inversify.get(Transient)),
+    );
+    bench("tsyringe / transient class", () =>
+      do_not_optimize(tsyringe.resolve(Transient)),
+    );
+    bench("awilix / transient class", () =>
+      do_not_optimize(awilix.resolve<Transient>("transient")),
+    );
+  });
+} else {
+  summary(registerBunjectSingleton);
+  summary(registerBunjectTransient);
+}
 
 summary(() => {
   bench("bunject / three-provider transient graph", () =>
@@ -93,4 +119,7 @@ summary(() => {
   });
 });
 
-await run({ throw: true });
+await run({
+  throw: true,
+  filter,
+});

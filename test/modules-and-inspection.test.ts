@@ -82,6 +82,15 @@ describe("registration modules", () => {
       expect.objectContaining({ code: "INVALID_MODULE" }),
     );
   });
+
+  test("rejects registration module return values at runtime", () => {
+    const container = new Container();
+    const returningModule = (() => 1) as unknown as RegistrationModule;
+
+    expect(() => container.load(returningModule)).toThrow(
+      expect.objectContaining({ code: "INVALID_MODULE" }),
+    );
+  });
 });
 
 describe("graph inspection", () => {

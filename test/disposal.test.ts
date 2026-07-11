@@ -546,6 +546,60 @@ describe("container disposal", () => {
     expect(container.disposed).toBe(true);
   });
 
+  test("rejects values returned by disposal callbacks", async () => {
+    const SYNC = token<object>("SYNC");
+    const ASYNC_FALLBACK = token<object>("ASYNC_FALLBACK");
+    const ASYNC = token<object>("ASYNC");
+
+    const syncContainer = new Container();
+    syncContainer.register(SYNC, {
+      useFactory: () => ({}),
+      onDisposal: (() => 1) as unknown as () => undefined,
+    });
+    syncContainer.resolve(SYNC);
+    expect(() => syncContainer.dispose()).toThrow(
+      expect.objectContaining({
+        errors: [
+          expect.objectContaining({
+            message: "onDisposal must return undefined.",
+          }),
+        ],
+      }),
+    );
+
+    const fallbackContainer = new Container();
+    fallbackContainer.register(ASYNC_FALLBACK, {
+      useFactory: () => ({}),
+      onDisposal: (() => 1) as unknown as () => undefined,
+    });
+    fallbackContainer.resolve(ASYNC_FALLBACK);
+    await expect(fallbackContainer.disposeAsync()).rejects.toEqual(
+      expect.objectContaining({
+        errors: [
+          expect.objectContaining({
+            message: "onDisposal must return undefined.",
+          }),
+        ],
+      }),
+    );
+
+    const asyncContainer = new Container();
+    asyncContainer.register(ASYNC, {
+      useFactory: () => ({}),
+      onDisposalAsync: (async () => 1) as unknown as () => Promise<void>,
+    });
+    asyncContainer.resolve(ASYNC);
+    await expect(asyncContainer.disposeAsync()).rejects.toEqual(
+      expect.objectContaining({
+        errors: [
+          expect.objectContaining({
+            message: "onDisposalAsync must resolve to undefined.",
+          }),
+        ],
+      }),
+    );
+  });
+
   test("waits for a misdeclared sync callback before async disposal rejects", async () => {
     const RESOURCE = token<object>("RESOURCE");
     let finished = false;

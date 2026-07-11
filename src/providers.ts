@@ -205,7 +205,11 @@ export function normalizeProvider(
     }
     const metadata = injectableOptions.get(provider.useClass);
     const declaredDependencies =
-      provider.inject ?? metadata?.inject ?? provider.useClass.inject;
+      provider.inject !== undefined
+        ? provider.inject
+        : metadata?.inject !== undefined
+          ? metadata.inject
+          : provider.useClass.inject;
     const hasDependencyDeclaration =
       provider.inject !== undefined ||
       metadata !== undefined ||
@@ -341,13 +345,16 @@ function assertBorrowedProvider(
   token: AnyToken,
 ): void {
   if (
+    provider.inject !== undefined ||
+    provider.scope !== undefined ||
     provider.onActivation !== undefined ||
     provider.onDisposal !== undefined ||
     provider.onDisposalAsync !== undefined
   ) {
     throw registrationError(
       "INVALID_PROVIDER",
-      `Borrowed provider for ${tokenName(token)} cannot define lifecycle hooks.`,
+      `Borrowed provider for ${tokenName(token)} cannot define inject, scope, ` +
+        "or lifecycle hooks.",
       token,
     );
   }

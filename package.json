@@ -44,6 +44,7 @@
   "scripts": {
     "api:check": "bun run build && bun run scripts/project-check.ts",
     "bench": "bun run bench/container.bench.ts",
+    "bench:bunject": "bun run bench/container.bench.ts '^bunject /'",
     "build": "bun run scripts/build.ts",
     "example:check": "bun run build && tsc -p examples/tsconfig.json && bun run examples/bun-http.ts",
     "harness:check": "bun run scripts/harness-check.ts",

@@ -69,6 +69,28 @@ describe("activation hooks", () => {
     );
   });
 
+  test("rejects activation hook return values through both resolve paths", async () => {
+    const SYNC = token<object>("SYNC");
+    const ASYNC = token<object>("ASYNC");
+    const container = new Container();
+    const returningHook = (() => 1) as unknown as () => undefined;
+    container.register(SYNC, {
+      useFactory: () => ({}),
+      onActivation: returningHook,
+    });
+    container.register(ASYNC, {
+      useFactoryAsync: async () => ({}),
+      onActivation: returningHook,
+    });
+
+    expect(() => container.resolve(SYNC)).toThrow(
+      expect.objectContaining({ code: "PROVIDER_FAILED" }),
+    );
+    await expect(container.resolveAsync(ASYNC)).rejects.toEqual(
+      expect.objectContaining({ code: "PROVIDER_FAILED" }),
+    );
+  });
+
   test("captures the post-activation disposal contract and dependency order", () => {
     const DEPENDENCY = token<Disposable>("DEPENDENCY");
     const ROOT = token<object>("ROOT");

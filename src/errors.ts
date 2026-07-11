@@ -69,6 +69,7 @@ export function enterPath(
   token: AnyToken,
   ancestry: readonly AnyToken[],
 ): readonly AnyToken[] {
+  if (ancestry.length === 0) return [token];
   const cycleStart = ancestry.indexOf(token);
   if (cycleStart !== -1) {
     const cycle = [...ancestry.slice(cycleStart), token];
@@ -154,9 +155,17 @@ export function registrationError(
 }
 
 export function tokenName(value: AnyToken): string {
-  return typeof value === "symbol"
-    ? value.description || value.toString()
-    : value.name || "<anonymous class>";
+  if (typeof value === "symbol") {
+    return value.description || value.toString();
+  }
+  try {
+    const name = value.name;
+    return typeof name === "string" && name.length > 0
+      ? name
+      : "<anonymous class>";
+  } catch {
+    return "<unavailable class token>";
+  }
 }
 
 export function formatPath(path: readonly AnyToken[]): string {

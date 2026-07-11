@@ -113,6 +113,7 @@ if (
   failures.push("package.json files must match the reviewed package allowlist.");
 }
 for (const script of [
+  "bench:bunject",
   "check",
   "harness:check",
   "package:check",

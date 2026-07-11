@@ -34,7 +34,7 @@ implementation details and must not become package subpath exports.
 3. Fix the shared invariant, not one caller. Avoid new runtime dependencies.
 4. Run focused tests and both supported TypeScript type checks.
 5. Update the active plan, user docs, changelog, and API hash when affected.
-6. Run `bun run check`; use `bun run bench` when a hot path changes.
+6. Run `bun run check`; use `bun run bench:bunject` when a hot path changes.
 7. Inspect `git diff --check` and commit one intentional, verified change.
 
 ## Commands
@@ -46,7 +46,8 @@ implementation details and must not become package subpath exports.
 - `bun run package:check`: npm-packed Bun and Node consumer smoke.
 - `bun run test:deno`: Deno 2 consumer smoke when Deno is installed.
 - `bun run example:check`: executable Bun HTTP request-scope example.
-- `bun run bench`: peer benchmark evidence.
+- `bun run bench:bunject`: Bunject-only hot-path evidence.
+- `bun run bench`: informational peer benchmark context.
 
 ## Non-negotiable invariants
 

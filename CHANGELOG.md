@@ -34,3 +34,7 @@ This project follows [Semantic Versioning](https://semver.org/).
   runtime dependencies. Internal modules remain outside the package export map;
   declaration hashing and JavaScript/declaration size budgets cover all emitted
   files in aggregate, and Deno resolves each module's sibling declaration.
+- Runtime rejection of null class dependency tuples, borrowed-provider options,
+  and non-undefined activation, module, or disposal callback results.
+- Profile-guided token and graph-validation fast paths, isolated benchmark
+  filtering, and native CPU-profile guidance without new dependencies.
