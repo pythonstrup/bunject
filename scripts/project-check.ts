@@ -17,6 +17,7 @@ const packageJson = JSON.parse(
 ) as { repository?: unknown; version?: unknown };
 const projectVersion = parseProjectVersion(packageJson.version);
 const version = projectVersion.value;
+assertReleaseRepository(packageJson.repository, "pythonstrup/bunject");
 
 const changelog = await readFile(join(root, "CHANGELOG.md"), "utf8");
 const headingPrefix = `## ${version} - `;

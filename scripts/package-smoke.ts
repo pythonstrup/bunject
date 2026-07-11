@@ -25,7 +25,11 @@ const { version } = JSON.parse(
 const archiveName = `bunject-${version}.tgz`;
 
 async function run(command: string[], cwd: string): Promise<void> {
-  const child = Bun.spawn(command, {
+  const spawnCommand =
+    process.platform === "win32" && command[0] === "npm"
+      ? ["cmd.exe", "/d", "/s", "/c", "npm.cmd", ...command.slice(1)]
+      : command;
+  const child = Bun.spawn(spawnCommand, {
     cwd,
     env: {
       ...Bun.env,

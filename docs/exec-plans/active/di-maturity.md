@@ -16,7 +16,7 @@ Ecosystem adoption and battle-testing remain external evidence.
   every focused leaf retain 100% line coverage; the extracted resolution kernel
   has 95.05% lines and 100% functions.
 - The verified runtime, public API, packaging, compatibility, and harness
-  baseline is committed through `b83bace`.
+  baseline is committed through `aa20a50`.
 - The activation-scoped `resolver()` descriptor and provider-level cleanup
   adapters have focused, type, coverage, packed-consumer, and combined-gate
   evidence.
@@ -51,9 +51,13 @@ Ecosystem adoption and battle-testing remain external evidence.
   the Bun HTTP request-scope example is type-checked and executable.
 - The agent map, architecture record, active plan, and mechanical harness check
   are present, and both focused and combined harness checks pass.
-- npm registry currently has no public `bunject` package.
-- GitHub remote, repository metadata, remote CI results, npm trusted publisher,
-  and provenance publication are not configured or verified.
+- npm registry currently has no public `bunject` package or release.
+- The public `pythonstrup/bunject` repository and exact package identity
+  metadata now exist. Its [first CI run][first-public-ci] passed quality,
+  minimum Bun, Node 22/24/26, and Deno 2.0/latest; Windows exposed an npm shim
+  lookup bug.
+- npm trusted publisher and provenance publication are not configured or
+  verified, and private vulnerability reporting is still disabled.
 
 ## Decisions
 
@@ -116,10 +120,9 @@ Ecosystem adoption and battle-testing remain external evidence.
 
 ## In progress
 
-- Establish the external GitHub/npm release baseline once the final repository
-  coordinates and publication authority are available. Bootstrap the first npm
-  version with maintainer 2FA, configure the trusted publisher, then verify the
-  remote compatibility matrix and provenance attestation.
+- Close the Windows packed-consumer failure, rerun the public compatibility
+  matrix, enable private vulnerability reporting, then bootstrap the first npm
+  version with maintainer 2FA and a trusted publisher.
 
 ## Remaining work
 
@@ -128,10 +131,11 @@ Ecosystem adoption and battle-testing remain external evidence.
 - Compare declarations against the previous published tarball after the first
   release; the current hash is deliberately a drift/review gate, not a SemVer
   compatibility proof.
-- After a GitHub URL exists, add package identity metadata and verify remote CI,
-  trusted publishing, and provenance.
 - Enable private vulnerability reporting and replace the provisional security
   route with the final advisory URL or a monitored fallback contact.
+- Add a class-token forward-reference helper only after release blockers. Typed
+  symbol tokens already avoid ESM declaration-order cycles; the helper is an
+  ergonomic improvement and must not create circular proxies.
 
 ## Exit criteria
 
@@ -311,3 +315,11 @@ Ecosystem adoption and battle-testing remain external evidence.
   discovery, and verified zero diagnostics on TypeScript 7.0.2, the IntelliJ
   5.9.3 service, and TypeScript 5.4.5. The complete 183-test gate and Deno 2.0.0
   and 2.8.1 type/runtime smoke also pass.
+- 2026-07-11: created and audited the public `pythonstrup/bunject` baseline.
+  Its first CI run passed quality, minimum Bun, Node 22/24/26, and both Deno
+  jobs; Windows failed because Bun could not spawn the extensionless npm shim.
+- 2026-07-11: mapped npm to `npm.cmd` only on Windows, fixed final repository
+  package metadata, and made ordinary API checks reject repository identity
+  drift before a release event.
+
+[first-public-ci]: https://github.com/pythonstrup/bunject/actions/runs/29155458515

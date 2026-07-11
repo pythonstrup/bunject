@@ -2,7 +2,8 @@
 
 - Bug reports should include Bun, Node, or Deno version, TypeScript version, a
   minimal dependency graph, and the complete error object.
-- Questions and feature proposals belong in repository discussions or issues.
+- Questions, non-security bug reports, and feature proposals belong in
+  repository issues.
 - The supported baseline is Bun 1.3.10, Node.js 22, Deno 2.0.0, and
   TypeScript 5.4.
 - The package is ESM-only and requires Node-compatible async-local context;

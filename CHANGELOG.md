@@ -43,3 +43,5 @@ This project follows [Semantic Versioning](https://semver.org/).
   TypeScript, reproduction, error, and expectation evidence.
 - Fail-closed stable-release checks for exact GitHub repository metadata and
   prerelease events, with lifecycle-free packing of the already verified build.
+- Public repository package metadata and an explicit Windows `cmd.exe` wrapper
+  for npm-backed packed-consumer verification.

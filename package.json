@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "description": "A Bun-first dependency injection container for standard TypeScript decorators.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pythonstrup/bunject.git"
+  },
   "keywords": [
     "bun",
     "dependency-injection",

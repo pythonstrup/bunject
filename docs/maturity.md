@@ -96,8 +96,10 @@ outside the supported package API.
 - [x] Local Deno 2.0.0 and 2.8.1 type/decorator/runtime smoke
 - [x] Per-module Deno `@ts-self-types` links for modular declaration resolution
 - [x] OIDC provenance release workflow gated by the full compatibility matrix
-- [ ] Deno 2, Windows, and runtime-matrix jobs passed on the eventual remote
-- [ ] npm trusted publisher, repository metadata, and provenance release verified
+- [x] Minimum/latest Bun, Node 22/24/26, and Deno 2.0/latest jobs passed on the
+  public GitHub repository
+- [ ] Windows packed-consumer job passes after the cross-platform npm shim fix
+- [ ] npm trusted publisher and provenance release verified
 
 `api/index.d.ts.sha256` deliberately hashes every emitted declaration path and
 normalized content, making any declaration-output change a review event. It is
@@ -108,8 +110,9 @@ tag and a dated changelog heading. Prerelease versions are blocked until the
 project adopts an explicit non-`latest` npm dist-tag policy, and GitHub
 prerelease events are rejected independently.
 
-CI configuration is repository evidence only after it has run on the eventual
-remote. The provenance workflow also needs the final repository URL in package
-metadata and npm trusted-publisher configuration. Popularity, ecosystem
-adoption, and battle-testing remain external metrics and cannot be claimed from
-repository tests.
+The [first public CI run](https://github.com/pythonstrup/bunject/actions/runs/29155458515)
+verified every configured compatibility job except the Windows packed-consumer
+job, which exposed a platform command-resolution bug.
+The provenance workflow still needs npm trusted-publisher configuration and an
+actual release. Popularity, ecosystem adoption, and battle-testing remain
+external metrics and cannot be claimed from repository tests.
