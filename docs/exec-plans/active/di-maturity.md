@@ -13,8 +13,8 @@ Ecosystem adoption and battle-testing remain external evidence.
 - Bun 1.3.14 and minimum Bun 1.3.10 are configured.
 - The complete local merge gate passes on the current worktree: 161 tests,
   97.62% overall lines, and 100% kernel lines.
-- Verified runtime, public API, packaging, and harness changes are committed in
-  `6db7b3e`.
+- The verified runtime, public API, packaging, compatibility, and harness
+  baseline is committed through `1dca27b`.
 - The activation-scoped `resolver()` descriptor and provider-level cleanup
   adapters have focused, type, coverage, packed-consumer, and combined-gate
   evidence.
@@ -57,7 +57,8 @@ Ecosystem adoption and battle-testing remain external evidence.
 
 ## In progress
 
-- Commit the locally verified result and record its Git baseline.
+- Await the final GitHub URL needed for package identity, remote compatibility
+  evidence, and trusted-publisher setup.
 
 ## Remaining work
 
@@ -114,3 +115,5 @@ Ecosystem adoption and battle-testing remain external evidence.
   after the fixes; no local P0, P1, or P2 finding remains.
 - 2026-07-11: made benchmark results observable through Mitata's optimization
   barrier and replaced volatile peer-ratio claims with an absolute policy.
+- 2026-07-11: committed the verified public API and release-harness baseline as
+  `1dca27b`.
