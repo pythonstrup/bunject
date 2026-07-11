@@ -9,7 +9,6 @@ import {
 } from "./dependencies.js";
 import {
   enterPath,
-  formatPath,
   providerFailure,
   providerOrResolutionFailure,
   rebasePendingError,
@@ -26,6 +25,39 @@ import type {
   AnyProviderInput,
   NormalizedProvider,
 } from "./providers.js";
+import {
+  RUNTIME_DEPENDENCY_HAS,
+  RUNTIME_DEPENDENCY_HAS_OWN,
+  RUNTIME_DEPENDENCY_RESOLVE,
+  RUNTIME_DEPENDENCY_RESOLVE_CHAINED,
+  captorConstraints,
+  clearRuntimeDependencyParent,
+  consumeRejectedPromise,
+  createConstruction,
+  createResolutionSession,
+  createRuntimeCollector,
+  inspectGraph,
+  mergeRuntimeDependencies,
+  nextLifetimeCaptor,
+  providerPromiseLike,
+  recordDynamicDependency,
+  resolutionContext,
+  strongerCaptor,
+  validateGraph,
+  waitForConstruction,
+  waitForConstructionStart,
+} from "./resolution.js";
+import type {
+  CacheEntry,
+  Construction,
+  ContainerFamily,
+  GraphAccess,
+  LifetimeCaptor,
+  Registration,
+  ResolutionContext,
+  ResolutionSession,
+  RuntimeDependencies,
+} from "./resolution.js";
 import { dependencyDescriptorType } from "./types.js";
 import type {
   AnyDependency,
@@ -37,8 +69,6 @@ import type {
   ExistingProvider,
   FactoryProvider,
   InjectableClass,
-  InspectedDependency,
-  InspectedProvider,
   Lazy,
   MetadataClassProvider,
   MultiResolutionOptions,
@@ -55,45 +85,10 @@ import type {
   ValueProvider,
 } from "./types.js";
 
-interface Registration {
-  readonly token: AnyToken;
-  readonly owner: Container;
-  readonly provider: NormalizedProvider;
-}
-
 interface BindingSet {
   readonly mode: "single" | "multi";
   readonly bindings: Registration[];
 }
-
-type CacheEntry =
-  | {
-      readonly state: "ready";
-      readonly value: unknown;
-      readonly dynamicDependencies: RuntimeDependencies;
-    }
-  | {
-      readonly state: "pending";
-      readonly promise: Promise<unknown>;
-      readonly producer: Construction;
-      readonly dynamicDependencies: RuntimeDependencies;
-    };
-
-interface Construction {
-  readonly token: AnyToken;
-  readonly path: readonly AnyToken[];
-  readonly waits: Map<Construction, number>;
-}
-
-const RUNTIME_DEPENDENCY_RESOLVE = 1;
-const RUNTIME_DEPENDENCY_HAS = 2;
-const RUNTIME_DEPENDENCY_HAS_OWN = 4;
-const RUNTIME_DEPENDENCY_RESOLVE_CHAINED = 8;
-type RuntimeDependencies = Map<Container, Map<AnyToken, number>>;
-const runtimeDependencyParents = new WeakMap<
-  RuntimeDependencies,
-  RuntimeDependencies
->();
 
 interface OwnedResource {
   readonly value: unknown;
@@ -126,38 +121,18 @@ interface SyncDisposalOperation {
   readonly errors: unknown[];
 }
 
-interface ResolutionSession {
-  readonly caches: Map<Container, Map<Registration, CacheEntry>>;
-}
-
-interface ContainerFamily {
-  mutating: boolean;
-}
-
-interface LifetimeCaptor {
-  readonly token: AnyToken;
-  readonly scope: "singleton" | "scoped" | "resolution";
-  readonly rank: number;
-  readonly domain: Container;
-}
-
-
-interface ResolutionContext {
-  readonly container: Container;
-  readonly family: ContainerFamily;
-  readonly path: readonly AnyToken[];
-  readonly session: ResolutionSession;
-  readonly construction: Construction | undefined;
-  readonly captor: LifetimeCaptor | undefined;
-  readonly collector: RuntimeDependencies;
-  active: boolean;
-}
-
-const resolutionContext = new AsyncLocalStorage<ResolutionContext>();
 const disposalContext = new AsyncLocalStorage<DisposalExecutionContext>();
 
 /** Registration and ownership domain that may inherit from a parent container. */
 export class Container implements Disposable, AsyncDisposable {
+  static readonly #graphAccess: GraphAccess = {
+    lookup: (container, token) => container.#lookup(token),
+    lookupSets: (container, token, chained) =>
+      container.#lookupSets(token, chained),
+    lookupOne: (container, token, path) => container.#lookupOne(token, path),
+    isAncestorOf: (ancestor, container) => ancestor.#isAncestorOf(container),
+  };
+
   readonly #registrations = new Map<AnyToken, BindingSet>();
   readonly #singletonCache = new Map<Registration, CacheEntry>();
   readonly #scopedCache = new Map<Registration, CacheEntry>();
@@ -810,93 +785,12 @@ export class Container implements Disposable, AsyncDisposable {
   ): DependencyGraph {
     assertToken(token);
     this.#assertCanResolve(token);
-
-    const providers: InspectedProvider[] = [];
-    const missing = new Set<AnyToken>();
-    const visited = new Map<Container, Set<Registration>>();
-    const visit = (
-      target: AnyToken,
-      lookup: Container,
-      emptyIsMissing: boolean,
-      chained = false,
-    ): void => {
-      const bindingSets = lookup.#lookupSets(target, chained);
-      if (bindingSets.length === 0) {
-        if (emptyIsMissing) missing.add(target);
-        return;
-      }
-
-      for (const bindings of bindingSets) {
-        for (const [binding, registration] of bindings.bindings.entries()) {
-          const scope = providerScope(registration.provider);
-          const effectiveLookup =
-            scope === "singleton" ? registration.owner : lookup;
-          let registrations = visited.get(effectiveLookup);
-          if (!registrations) {
-            registrations = new Set();
-            visited.set(effectiveLookup, registrations);
-          }
-          if (registrations.has(registration)) continue;
-          registrations.add(registration);
-
-          const dependencies =
-            registration.provider.kind === "value"
-              ? []
-              : registration.provider.inject.map<InspectedDependency>(
-                  (dependency): InspectedDependency => {
-                    if (isResolverDependency(dependency)) {
-                      return Object.freeze({ kind: "resolver" });
-                    }
-                    if (isTokenDependencyDescriptor(dependency, "all")) {
-                      return Object.freeze({
-                        token: dependency.token,
-                        kind: "all" as const,
-                        chained: dependency.chained,
-                      });
-                    }
-                    return Object.freeze({
-                      token: isTokenDependencyDescriptor(dependency)
-                        ? dependency.token
-                        : dependency,
-                      kind: isTokenDependencyDescriptor(dependency)
-                        ? dependency[dependencyDescriptorType]
-                        : "required",
-                    });
-                  },
-                );
-          providers.push(
-            Object.freeze({
-              token: target,
-              binding,
-              mode: bindings.mode,
-              kind: registration.provider.kind,
-              scope,
-              owner: registration.owner,
-              dependencies: Object.freeze(dependencies),
-            }),
-          );
-
-          for (const dependency of dependencies) {
-            if (dependency.kind === "lazy" || dependency.kind === "resolver") {
-              continue;
-            }
-            visit(
-              dependency.token,
-              effectiveLookup,
-              dependency.kind === "required",
-              dependency.kind === "all" && dependency.chained,
-            );
-          }
-        }
-      }
-    };
-
-    visit(token, this, true, options.chained === true);
-    return Object.freeze({
-      root: token,
-      providers: Object.freeze(providers),
-      missing: Object.freeze([...missing]),
-    });
+    return inspectGraph(
+      token,
+      this,
+      options.chained === true,
+      Container.#graphAccess,
+    );
   }
 
   /** Whether disposal has started. */
@@ -1094,289 +988,25 @@ export class Container implements Disposable, AsyncDisposable {
         : this.#validatedAsync;
     const cacheable = initialCaptor === undefined;
     if (cacheable && validated.has(root)) return;
-    if (initialCaptor && !this.#isAncestorOf(initialCaptor.domain)) {
-      throw resolutionError(
-        "CAPTIVE_DEPENDENCY",
-        `${tokenName(initialCaptor.token)} (${initialCaptor.scope}) cannot ` +
-          `resolve through a descendant container.`,
-        [...prefix, root],
-      );
-    }
-
-    interface Frame {
-      readonly token: AnyToken;
-    }
-    type VisitStates = Map<Container, Map<Registration, Set<string>>>;
-    const states: VisitStates = new Map();
-    const stack: Frame[] = [];
-    const containerIds = new Map<Container, number>();
-    const containerId = (container: Container): number => {
-      const known = containerIds.get(container);
-      if (known !== undefined) return known;
-      const identifier = containerIds.size;
-      containerIds.set(container, identifier);
-      return identifier;
-    };
-    const captorKey = (captor?: LifetimeCaptor): string =>
-      captor
-        ? `${captor.rank}:${containerId(captor.domain)}`
-        : "none";
-    const wasVisited = (
-      source: VisitStates,
-      lookup: Container,
-      registration: Registration,
-      captor?: LifetimeCaptor,
-    ): boolean =>
-      source.get(lookup)?.get(registration)?.has(captorKey(captor)) === true;
-    const markVisited = (
-      source: VisitStates,
-      lookup: Container,
-      registration: Registration,
-      captor?: LifetimeCaptor,
-    ): void => {
-      let registrations = source.get(lookup);
-      if (!registrations) {
-        registrations = new Map();
-        source.set(lookup, registrations);
-      }
-      let captors = registrations.get(registration);
-      if (!captors) {
-        captors = new Set();
-        registrations.set(registration, captors);
-      }
-      captors.add(captorKey(captor));
-    };
-
-    const validateLazyLifetime = (
-      token: AnyToken,
-      lookup: Container,
-      captor: LifetimeCaptor,
-      path: readonly AnyToken[],
-      visited: VisitStates,
-      allBindings = false,
-      chainedBindings = false,
-    ): void => {
-      const bindingSets = lookup.#lookupSets(
-        token,
-        allBindings && chainedBindings,
-      );
-      for (const bindings of bindingSets) {
-        for (const registration of bindings.bindings) {
-          const scope = providerScope(registration.provider);
-          const effectiveLookup =
-            scope === "singleton" ? registration.owner : lookup;
-          if (wasVisited(visited, effectiveLookup, registration, captor)) {
-            continue;
-          }
-          markVisited(visited, effectiveLookup, registration, captor);
-
-          let nextCaptor = captor;
-          if (
-            scope === "transient" &&
-            !effectiveLookup.#isAncestorOf(captor.domain)
-          ) {
-            throw resolutionError(
-              "CAPTIVE_DEPENDENCY",
-              `${tokenName(token)} (transient) cannot be captured by ` +
-                `${tokenName(captor.token)} (${captor.scope}).`,
-              path,
-            );
-          }
-          if (scope && scope !== "transient") {
-            const domain =
-              scope === "singleton" ? registration.owner : effectiveLookup;
-            const rank = lifetimeRank(scope);
-            if (rank < captor.rank || !domain.#isAncestorOf(captor.domain)) {
-              throw resolutionError(
-                "CAPTIVE_DEPENDENCY",
-                `${tokenName(token)} (${scope}) cannot be captured by ` +
-                  `${tokenName(captor.token)} (${captor.scope}).`,
-                path,
-              );
-            }
-            nextCaptor = { token, scope, rank, domain };
-          }
-
-          if (registration.provider.kind === "value") continue;
-          for (const dependency of registration.provider.inject) {
-            if (isResolverDependency(dependency)) continue;
-            const dependencyToken = isTokenDependencyDescriptor(dependency)
-              ? dependency.token
-              : dependency;
-            const dependencyIsAll = isTokenDependencyDescriptor(
-              dependency,
-              "all",
-            );
-            const dependencyChained =
-              dependencyIsAll && dependency.chained;
-            if (
-              effectiveLookup.#lookupSets(
-                dependencyToken,
-                dependencyChained,
-              ).length === 0
-            ) continue;
-            validateLazyLifetime(
-              dependencyToken,
-              effectiveLookup,
-              nextCaptor,
-              [...path, dependencyToken],
-              visited,
-              dependencyIsAll,
-              dependencyChained,
-            );
-          }
-        }
-      }
-    };
-
-    const visitRegistration = (
-      token: AnyToken,
-      registration: Registration,
-      lookup: Container,
-      path: readonly AnyToken[],
-      captor?: LifetimeCaptor,
-    ): void => {
-      const scope = providerScope(registration.provider);
-      const effectiveLookup = scope === "singleton" ? registration.owner : lookup;
-      const cycleStart = stack.findIndex((frame) => frame.token === token);
-      if (cycleStart !== -1) {
-        const cycle = [
-          ...stack.slice(cycleStart).map((frame) => frame.token),
-          token,
-        ];
-        throw resolutionError(
-          "CIRCULAR",
-          `Circular dependency detected: ${formatPath(cycle)}.`,
-          path,
-          undefined,
-          cycle,
-        );
-      }
-      if (wasVisited(states, effectiveLookup, registration, captor)) return;
-
-      const provider = registration.provider;
-      if (synchronous && provider.kind === "asyncFactory") {
-        throw resolutionError(
-          "ASYNC_IN_SYNC",
-          `Async provider ${tokenName(token)} cannot be resolved with resolve(). ` +
-            "Use resolveAsync() instead.",
-          path,
-        );
-      }
-
-      let nextCaptor = captor;
-      if (
-        scope === "transient" &&
-        captor &&
-        !effectiveLookup.#isAncestorOf(captor.domain)
-      ) {
-        throw resolutionError(
-          "CAPTIVE_DEPENDENCY",
-          `${tokenName(token)} (transient) cannot be captured by ` +
-            `${tokenName(captor.token)} (${captor.scope}).`,
-          path,
-        );
-      }
-      if (scope && scope !== "transient") {
-        const domain = scope === "singleton" ? registration.owner : effectiveLookup;
-        const rank = lifetimeRank(scope);
-        if (
-          captor &&
-          (rank < captor.rank || !domain.#isAncestorOf(captor.domain))
-        ) {
-          throw resolutionError(
-            "CAPTIVE_DEPENDENCY",
-            `${tokenName(token)} (${scope}) cannot be captured by ` +
-              `${tokenName(captor.token)} (${captor.scope}).`,
-            path,
-          );
-        }
-        nextCaptor = { token, scope, rank, domain };
-      }
-
-      stack.push({ token });
-      if (provider.kind !== "value") {
-        for (const dependency of provider.inject) {
-          if (isResolverDependency(dependency)) continue;
-          const dependencyToken = isTokenDependencyDescriptor(dependency)
-            ? dependency.token
-            : dependency;
-          if (isTokenDependencyDescriptor(dependency, "lazy")) {
-            if (nextCaptor) {
-              validateLazyLifetime(
-                dependencyToken,
-                effectiveLookup,
-                nextCaptor,
-                [...path, dependencyToken],
-                new Map(),
-              );
-            }
-            continue;
-          }
-          if (
-            isTokenDependencyDescriptor(dependency, "optional") &&
-            !effectiveLookup.#lookup(dependencyToken)
-          ) {
-            continue;
-          }
-          const allDependency = isTokenDependencyDescriptor(dependency, "all");
-          visit(
-            dependencyToken,
-            effectiveLookup,
-            nextCaptor,
-            allDependency,
-            allDependency && dependency.chained,
-          );
-        }
-      }
-      stack.pop();
-      markVisited(states, effectiveLookup, registration, captor);
-    };
-
-    const visit = (
-      token: AnyToken,
-      lookup: Container,
-      captor?: LifetimeCaptor,
-      allBindings = false,
-      chainedBindings = false,
-    ): void => {
-      const path = [
-        ...prefix,
-        ...stack.map((frame) => frame.token),
-        token,
-      ];
-      const bindingSets = lookup.#lookupSets(
-        token,
-        allBindings && chainedBindings,
-      );
-      if (bindingSets.length === 0) {
-        if (allBindings) return;
-        throw resolutionError(
-          "NOT_FOUND",
-          `Provider not found for ${tokenName(token)}.`,
-          path,
-        );
-      }
-
-      const registrations = allBindings
-        ? bindingSets.flatMap((bindings) => bindings.bindings)
-        : [lookup.#lookupOne(token, path)!];
-      for (const registration of registrations) {
-        visitRegistration(token, registration, lookup, path, captor);
-      }
-    };
-
-    visit(root, this, initialCaptor, all, chained);
+    const validatedAsync = synchronous
+      ? all
+        ? chained
+          ? this.#validatedChainedAllAsync
+          : this.#validatedAllAsync
+        : this.#validatedAsync
+      : undefined;
+    validateGraph({
+      root,
+      lookup: this,
+      synchronous,
+      all,
+      initialCaptor,
+      prefix,
+      chained,
+      access: Container.#graphAccess,
+    });
     if (cacheable) validated.add(root);
-    if (cacheable && synchronous) {
-      (
-        all
-          ? chained
-            ? this.#validatedChainedAllAsync
-            : this.#validatedAllAsync
-          : this.#validatedAsync
-      ).add(root);
-    }
+    if (cacheable) validatedAsync?.add(root);
   }
 
   #resolveSync<T>(
@@ -1549,7 +1179,7 @@ export class Container implements Disposable, AsyncDisposable {
     if (parentCollector) {
       mergeRuntimeDependencies(parentCollector, collector);
     }
-    if (cache) runtimeDependencyParents.delete(collector);
+    if (cache) clearRuntimeDependencyParent(collector);
     return instance as T;
   }
 
@@ -1703,7 +1333,7 @@ export class Container implements Disposable, AsyncDisposable {
             return instance;
           })
           .finally(() => {
-            runtimeDependencyParents.delete(collector);
+            clearRuntimeDependencyParent(collector);
             if (
               cache.get(registration) === entry &&
               entry.state === "pending"
@@ -2813,164 +2443,6 @@ export class Container implements Disposable, AsyncDisposable {
   }
 }
 
-function createResolutionSession(): ResolutionSession {
-  return { caches: new Map() };
-}
-
-function createConstruction(
-  token: AnyToken,
-  path: readonly AnyToken[],
-): Construction {
-  return { token, path, waits: new Map() };
-}
-
-function recordDynamicDependency(
-  dependencies: RuntimeDependencies | undefined,
-  lookup: Container,
-  token: AnyToken,
-  mode = RUNTIME_DEPENDENCY_RESOLVE,
-): void {
-  for (
-    let current = dependencies;
-    current;
-    current = runtimeDependencyParents.get(current)
-  ) {
-    let tokens = current.get(lookup);
-    if (!tokens) {
-      tokens = new Map();
-      current.set(lookup, tokens);
-    }
-    tokens.set(token, (tokens.get(token) ?? 0) | mode);
-  }
-}
-
-function createRuntimeCollector(
-  parent?: RuntimeDependencies,
-): RuntimeDependencies {
-  const collector: RuntimeDependencies = new Map();
-  if (parent) runtimeDependencyParents.set(collector, parent);
-  return collector;
-}
-
-function mergeRuntimeDependencies(
-  target: RuntimeDependencies,
-  source: ReadonlyMap<Container, ReadonlyMap<AnyToken, number>>,
-): void {
-  for (const [lookup, dependencies] of source) {
-    let tokens = target.get(lookup);
-    if (!tokens) {
-      tokens = new Map();
-      target.set(lookup, tokens);
-    }
-    for (const [token, mode] of dependencies) {
-      tokens.set(token, (tokens.get(token) ?? 0) | mode);
-    }
-  }
-}
-
-function waitForConstruction(
-  current: Construction | undefined,
-  producer: Construction,
-  promise: Promise<unknown>,
-): Promise<unknown> {
-  return waitForConstructionStart(current, producer, () => promise);
-}
-
-function waitForConstructionStart<T>(
-  current: Construction | undefined,
-  producer: Construction,
-  start: () => Promise<T>,
-): Promise<T> {
-  if (!current) return start();
-
-  const waitPath = findConstructionPath(producer, current, new Set());
-  if (waitPath) {
-    const cycle = [current.token, ...waitPath.map((item) => item.token)];
-    throw resolutionError(
-      "CIRCULAR",
-      `Circular dependency detected: ${formatPath(cycle)}.`,
-      [...current.path, ...waitPath.map((item) => item.token)],
-      undefined,
-      cycle,
-    );
-  }
-
-  current.waits.set(producer, (current.waits.get(producer) ?? 0) + 1);
-  let promise: Promise<T>;
-  try {
-    promise = start();
-  } catch (error) {
-    const remaining = (current.waits.get(producer) ?? 1) - 1;
-    if (remaining === 0) current.waits.delete(producer);
-    else current.waits.set(producer, remaining);
-    throw error;
-  }
-  return promise.finally(() => {
-    const remaining = (current.waits.get(producer) ?? 1) - 1;
-    if (remaining === 0) current.waits.delete(producer);
-    else current.waits.set(producer, remaining);
-  });
-}
-
-function findConstructionPath(
-  current: Construction,
-  target: Construction,
-  visited: Set<Construction>,
-): readonly Construction[] | undefined {
-  if (current === target) return [current];
-  if (visited.has(current)) return undefined;
-  visited.add(current);
-  for (const dependency of current.waits.keys()) {
-    const path = findConstructionPath(dependency, target, visited);
-    if (path) return [current, ...path];
-  }
-  return undefined;
-}
-
-function nextLifetimeCaptor(
-  token: AnyToken,
-  registration: Registration,
-  lookup: Container,
-  captor?: LifetimeCaptor,
-): LifetimeCaptor | undefined {
-  const scope = providerScope(registration.provider);
-  if (!scope || scope === "transient") return captor;
-  const domain = scope === "singleton" ? registration.owner : lookup;
-  return strongerCaptor(captor, {
-    token,
-    scope,
-    rank: lifetimeRank(scope),
-    domain,
-  });
-}
-
-function strongerCaptor(
-  first?: LifetimeCaptor,
-  second?: LifetimeCaptor,
-): LifetimeCaptor | undefined {
-  if (!first) return second;
-  if (!second) return first;
-  return second.rank >= first.rank ? second : first;
-}
-
-function captorConstraints(
-  first?: LifetimeCaptor,
-  second?: LifetimeCaptor,
-): readonly LifetimeCaptor[] {
-  if (!first) return second ? [second] : [];
-  if (!second) return [first];
-  if (first.rank === second.rank && first.domain === second.domain) {
-    return [second];
-  }
-  return [first, second];
-}
-
-function lifetimeRank(scope: "singleton" | "scoped" | "resolution"): number {
-  if (scope === "singleton") return 3;
-  if (scope === "scoped") return 2;
-  return 1;
-}
-
 function checkedDisposalMethod(
   value: unknown,
   key: typeof Symbol.dispose | typeof Symbol.asyncDispose,
@@ -3069,19 +2541,4 @@ function hasDisposalPath(
     if (hasDisposalPath(dependency, target, visited)) return true;
   }
   return false;
-}
-
-function providerPromiseLike(
-  value: unknown,
-  path: readonly AnyToken[],
-): value is PromiseLike<unknown> {
-  try {
-    return isPromiseLike(value);
-  } catch (cause) {
-    throw providerFailure(path, cause);
-  }
-}
-
-function consumeRejectedPromise(value: PromiseLike<unknown>): void {
-  void Promise.resolve(value).catch(() => undefined);
 }

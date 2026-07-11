@@ -19,15 +19,18 @@ const sourceModules = [
   "src/dependencies.ts",
   "src/providers.ts",
   "src/errors.ts",
+  "src/resolution.ts",
   "src/container.ts",
 ] as const;
 const requiredFiles = [
   "AGENTS.md",
   "ARCHITECTURE.md",
+  "CONTRIBUTING.md",
   "README.md",
   "SECURITY.md",
   ".github/workflows/ci.yml",
   ".github/workflows/release.yml",
+  ".github/ISSUE_TEMPLATE/bug.yml",
   "docs/index.md",
   "docs/api.md",
   "docs/harness.md",
@@ -37,6 +40,7 @@ const requiredFiles = [
   "examples/tsconfig.json",
   "package.json",
   "tsconfig.json",
+  "tsconfig.build.json",
   ...sourceModules,
   "scripts/deno-smoke.ts",
   "scripts/runtime-smoke.mjs",
@@ -47,6 +51,37 @@ for (const file of requiredFiles) {
     await access(join(root, file));
   } catch {
     failures.push(`Missing required harness input: ${file}`);
+  }
+}
+if (failures.length > 0) throwHarnessFailure();
+
+const bugForm = Bun.YAML.parse(
+  await readFile(join(root, ".github/ISSUE_TEMPLATE/bug.yml"), "utf8"),
+) as {
+  name?: unknown;
+  description?: unknown;
+  body?: Array<{
+    id?: unknown;
+    validations?: { required?: unknown };
+  }>;
+};
+if (
+  typeof bugForm.name !== "string" ||
+  typeof bugForm.description !== "string"
+) {
+  failures.push("The bug issue form must have a name and description.");
+}
+for (const id of [
+  "runtime",
+  "runtime_version",
+  "typescript_version",
+  "reproduction",
+  "error",
+  "expected",
+]) {
+  const field = bugForm.body?.find((item) => item.id === id);
+  if (field?.validations?.required !== true) {
+    failures.push(`The bug issue form must require ${id}.`);
   }
 }
 if (failures.length > 0) throwHarnessFailure();
@@ -191,6 +226,13 @@ const publishJob = publishIndex === -1
 if (!publishJob.includes("    needs:\n")) {
   failures.push("Release publish must depend on compatibility jobs.");
 }
+if (
+  !publishJob
+    .split("\n")
+    .includes("    if: github.event.release.prerelease == false")
+) {
+  failures.push("Release publish must reject GitHub prereleases at job level.");
+}
 for (const job of compatibilityJobs) {
   if (!publishJob.includes(`      - ${job}\n`)) {
     failures.push(`Release publish must wait for ${job}.`);
@@ -198,8 +240,11 @@ for (const job of compatibilityJobs) {
 }
 for (const marker of [
   "id-token: write",
+  "RELEASE_TAG: ${{ github.event.release.tag_name }}",
+  "RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}",
+  "GITHUB_REPOSITORY: ${{ github.repository }}",
   "bun run release:check",
-  "bun pm pack --filename bunject.tgz --quiet",
+  "bun pm pack --ignore-scripts --filename bunject.tgz --quiet",
   "bun run scripts/package-lint.ts bunject.tgz",
   "bun run scripts/package-smoke.ts bunject.tgz",
   "npm publish ./bunject.tgz --provenance --access public",
@@ -212,11 +257,17 @@ for (const marker of [
 const tsconfig = JSON.parse(
   await readFile(join(root, "tsconfig.json"), "utf8"),
 ) as { compilerOptions?: Record<string, unknown> };
+const buildTsconfig = JSON.parse(
+  await readFile(join(root, "tsconfig.build.json"), "utf8"),
+) as { compilerOptions?: Record<string, unknown> };
 if (tsconfig.compilerOptions?.experimentalDecorators === true) {
   failures.push("Legacy experimentalDecorators must remain disabled.");
 }
 if (tsconfig.compilerOptions?.emitDecoratorMetadata === true) {
   failures.push("emitDecoratorMetadata must remain disabled.");
+}
+if (buildTsconfig.compilerOptions?.stripInternal !== true) {
+  failures.push("Internal kernel declarations must be stripped from the build.");
 }
 
 const sourceFiles: string[] = [];

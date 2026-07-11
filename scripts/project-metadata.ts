@@ -25,6 +25,36 @@ export function assertStableRelease(version: ProjectVersion): void {
   );
 }
 
+export function assertStableReleaseEvent(value: unknown): void {
+  if (value === "false") return;
+  throw new Error("A prerelease GitHub release cannot publish to npm latest.");
+}
+
+export function assertReleaseRepository(
+  repository: unknown,
+  githubRepository: string | undefined,
+): void {
+  const parts = githubRepository?.split("/");
+  if (
+    parts?.length !== 2 ||
+    parts[0]?.length === 0 ||
+    parts[1]?.length === 0
+  ) {
+    throw new Error("GITHUB_REPOSITORY must identify the release repository.");
+  }
+
+  const expected = `git+https://github.com/${githubRepository}.git`;
+  if (
+    typeof repository === "object" &&
+    repository !== null &&
+    Reflect.get(repository, "type") === "git" &&
+    Reflect.get(repository, "url") === expected
+  ) {
+    return;
+  }
+  throw new Error(`package.json repository.url must exactly match ${expected}.`);
+}
+
 export function isCalendarDate(value: string): boolean {
   const parsed = new Date(`${value}T00:00:00.000Z`);
   return (

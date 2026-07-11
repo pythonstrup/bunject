@@ -30,11 +30,16 @@ This project follows [Semantic Versioning](https://semver.org/).
   reference, knowledge reachability, reference/anchor and packed-document link
   validation, and compatibility-gated exact-tarball OIDC publication.
 - Explicit public facade plus focused type, dependency, provider, error, and
-  container source modules, without changing the root API, runtime behavior, or
-  runtime dependencies. Internal modules remain outside the package export map;
-  declaration hashing and JavaScript/declaration size budgets cover all emitted
-  files in aggregate, and Deno resolves each module's sibling declaration.
+  container source modules plus a container-state-free resolution kernel,
+  without changing the root API, runtime behavior, or runtime dependencies.
+  Internal modules remain outside the package export map; declaration hashing
+  and JavaScript/declaration size budgets cover all emitted files in aggregate,
+  and Deno resolves each module's sibling declaration.
 - Runtime rejection of null class dependency tuples, borrowed-provider options,
   and non-undefined activation, module, or disposal callback results.
 - Profile-guided token and graph-validation fast paths, isolated benchmark
   filtering, and native CPU-profile guidance without new dependencies.
+- Human contribution guidance and a structured issue form that requires runtime,
+  TypeScript, reproduction, error, and expectation evidence.
+- Fail-closed stable-release checks for exact GitHub repository metadata and
+  prerelease events, with lifecycle-free packing of the already verified build.

@@ -52,7 +52,7 @@ nested lists, and reference links follow the runtime's real syntax without a
 new package. The harness also verifies the full merge-gate composition; zero
 runtime dependencies; side-effect-free package metadata;
 standard-decorator compiler settings; and banned reflection imports across the
-source tree. The source checks require the six intentional module boundaries,
+source tree. The source checks require the seven intentional module boundaries,
 explicit root exports, `.js` relative import specifiers, and no internal import
 through the public facade. They also require each emitted module's Deno
 `@ts-self-types` declaration link. Package metadata keeps internal modules out
@@ -62,7 +62,12 @@ every emitted `.d.ts` path and normalized content; size budgets aggregate every
 emitted `.js` and `.d.ts` file so splitting cannot evade either gate. The
 harness also requires the CI and release workflows, their
 supported-runtime jobs, and the compatibility-gated OIDC provenance contract
-that lints, consumes, and publishes the same tarball.
+that lints, consumes, and publishes the same tarball. It parses the bug issue
+form with Bun's native YAML parser and requires the runtime, runtime version,
+TypeScript version, reproduction, complete error, and expected behavior. A
+release must be a stable GitHub release whose case-sensitive repository
+coordinate matches package metadata; packing skips lifecycle scripts so the
+already checked build is the exact build placed in the archive.
 
 ## Change loop
 

@@ -12,7 +12,7 @@ with modern Node.js and Deno 2 through Node compatibility APIs.
 ## Install
 
 Bunject 0.1.0 is not published yet. These commands become available after the
-first npm release; repository development instructions are in `AGENTS.md`.
+first npm release; repository development instructions are in `CONTRIBUTING.md`.
 
 ```sh
 bun add bunject

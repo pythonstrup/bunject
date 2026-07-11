@@ -8,20 +8,24 @@ reflection, global registration, parameter decorators, or framework-specific
 discovery. Browser and non-Node-compatible edge runtimes are not targets because
 the kernel uses `node:async_hooks` for concurrent resolution context.
 
-The original single source crossed the point where navigation, review, and
-independent ownership were measurably worse. The source therefore has six
-deliberate boundaries while preserving one cohesive stateful kernel:
+The original single source crossed the point where navigation and review were
+measurably worse. The source therefore has seven deliberate boundaries while
+preserving one owner for mutable container state:
 
 - [`src/index.ts`](./src/index.ts) explicitly exports the public root surface;
 - `src/types.ts`, `src/dependencies.ts`, `src/providers.ts`, and `src/errors.ts`
   are focused leaves for their named concerns;
-- [`src/container.ts`](./src/container.ts) owns container state, resolution,
-  mutation, caching, ownership, and disposal.
+- `src/resolution.ts` contains container-state-free graph traversal,
+  construction wait tracking, runtime dependency collection, and lifetime
+  calculations;
+- [`src/container.ts`](./src/container.ts) owns registration, cache, hierarchy,
+  ownership, mutation, and lifecycle state and orchestrates those operations.
 
 This is a maintainability boundary, not an API or behavior change. It adds no
-runtime dependency and does not split private container state across service
-objects. The package exports only `bunject`; emitted internal modules are not
-supported subpaths.
+runtime dependency. A narrow class-owned access adapter lets the resolution
+kernel inspect private lookup relationships without exposing or duplicating
+mutable state. The package exports only `bunject`; emitted internal modules are
+not supported subpaths.
 
 ## Public model
 

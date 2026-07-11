@@ -1,0 +1,54 @@
+name: Bug report
+description: Report reproducible incorrect Bunject behavior
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not disclose security vulnerabilities here. Follow SECURITY.md instead.
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      options:
+        - Bun
+        - Node.js
+        - Deno
+    validations:
+      required: true
+  - type: input
+    id: runtime_version
+    attributes:
+      label: Runtime version
+      placeholder: "Example: Bun 1.3.14"
+    validations:
+      required: true
+  - type: input
+    id: typescript_version
+    attributes:
+      label: TypeScript version
+      placeholder: "Example: 5.4.5"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction and dependency graph
+      description: Include the smallest runnable code or repository link.
+      render: typescript
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: Complete error
+      description: Include the error code, path, cycle, token, and cause when present.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true

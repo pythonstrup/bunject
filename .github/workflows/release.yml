@@ -86,6 +86,7 @@ jobs:
       - run: bun run test:deno
 
   publish:
+    if: github.event.release.prerelease == false
     needs:
       - quality
       - minimum-bun
@@ -112,9 +113,11 @@ jobs:
       - name: Verify release tag and changelog
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: bun run release:check
       - name: Pack release artifact
-        run: bun pm pack --filename bunject.tgz --quiet
+        run: bun pm pack --ignore-scripts --filename bunject.tgz --quiet
       - name: Verify exact release artifact
         run: |
           bun run scripts/package-lint.ts bunject.tgz

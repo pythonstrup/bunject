@@ -56,13 +56,15 @@ callers may still hold.
 - [x] Aggregate emitted-declaration hash, package lint, and versioned changelog
   gate
 - [x] Agent map, architecture record, execution plan, and knowledge-link harness
+- [x] Human contribution guide and structured runtime bug report form
 - [x] Shipped public API reference and declaration-level documentation
 
 The original single source crossed the practical navigation and review
-threshold, so the maintainability target is now an explicit public facade,
-four focused leaves, and one cohesive private-state container kernel.
-This split must preserve the root API and runtime behavior, add no runtime
-dependency, and keep every internal module outside the supported package API.
+threshold. The maintainability target is now an explicit public facade, four
+focused leaves, one container-state-free resolution kernel, and one
+private-state container orchestrator. This split must preserve the root API and
+runtime behavior, add no runtime dependency, and keep every internal module
+outside the supported package API.
 
 ## Engineering gates
 
@@ -76,6 +78,8 @@ dependency, and keep every internal module outside the supported package API.
 - [x] Packed tarball install plus isolated NodeNext, Bun, Node, declaration,
   and packaged-document link smoke
 - [x] Release publication lints and consumes the exact tarball passed to npm
+- [x] Stable GitHub release, exact repository-coordinate, and no-rebuild pack
+  gates configured
 - [x] Node 22/24/26 runtime matrix configured
 - [x] Node matrix exercises async context, scope, coalescing, paths, and disposal
 - [x] Windows packed-consumer job configured
@@ -101,7 +105,8 @@ a drift gate, not a substitute for comparing against a previous published
 release. The maintainer must assess SemVer impact, update the changelog, and
 then refresh the hash. A release additionally requires a `v<package version>`
 tag and a dated changelog heading. Prerelease versions are blocked until the
-project adopts an explicit non-`latest` npm dist-tag policy.
+project adopts an explicit non-`latest` npm dist-tag policy, and GitHub
+prerelease events are rejected independently.
 
 CI configuration is repository evidence only after it has run on the eventual
 remote. The provenance workflow also needs the final repository URL in package

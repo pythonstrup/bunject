@@ -3,7 +3,9 @@ import { readFile } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  assertReleaseRepository,
   assertStableRelease,
+  assertStableReleaseEvent,
   isCalendarDate,
   parseProjectVersion,
 } from "./project-metadata";
@@ -12,7 +14,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist");
 const packageJson = JSON.parse(
   await readFile(join(root, "package.json"), "utf8"),
-) as { version?: unknown };
+) as { repository?: unknown; version?: unknown };
 const projectVersion = parseProjectVersion(packageJson.version);
 const version = projectVersion.value;
 
@@ -39,6 +41,11 @@ if (releaseDate !== "Unreleased" && !validReleaseDate) {
 
 if (release) {
   assertStableRelease(projectVersion);
+  assertStableReleaseEvent(process.env.RELEASE_PRERELEASE);
+  assertReleaseRepository(
+    packageJson.repository,
+    process.env.GITHUB_REPOSITORY,
+  );
   const expectedTag = `v${version}`;
   if (process.env.RELEASE_TAG !== expectedTag) {
     throw new Error(

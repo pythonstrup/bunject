@@ -298,6 +298,23 @@ describe("resolver dependency", () => {
     expect(deferred()).toBe(2);
   });
 
+  test("starts a fresh resolution session for a retained resolver", () => {
+    const VALUE = token<object>("VALUE");
+    const HOLDER = token<Resolver>("HOLDER");
+    const container = new Container();
+    container.register(VALUE, {
+      scope: "resolution",
+      useFactory: () => ({}),
+    });
+    container.register(HOLDER, {
+      inject: [resolver()],
+      useFactory: (activeResolver) => activeResolver,
+    });
+
+    const retained = container.resolve(HOLDER);
+    expect(retained.resolve(VALUE)).not.toBe(retained.resolve(VALUE));
+  });
+
   test("shares an active resolution session and rejects use after scope disposal", async () => {
     const VALUE = token<object>("VALUE");
     const RESOURCE = token<Disposable>("RESOURCE");

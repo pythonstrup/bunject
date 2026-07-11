@@ -107,6 +107,32 @@ describe("container scopes", () => {
     expect(scope.createScope().resolve(VALUE)).not.toBe(scope.resolve(VALUE));
   });
 
+  test("does not coalesce concurrent async transient providers", async () => {
+    const SERVICE = token<object>("SERVICE");
+    let calls = 0;
+    const started = Promise.withResolvers<void>();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const container = new Container();
+    container.register(SERVICE, {
+      useFactoryAsync: async () => {
+        calls += 1;
+        if (calls === 2) started.resolve();
+        await gate;
+        return {};
+      },
+    });
+
+    const first = container.resolveAsync(SERVICE);
+    const second = container.resolveAsync(SERVICE);
+    await started.promise;
+    expect(calls).toBe(2);
+    release();
+    expect(await first).not.toBe(await second);
+  });
+
   test("resolution providers share one top-level graph only", () => {
     @Injectable({ scope: "resolution" })
     class PerResolution {}

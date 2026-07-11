@@ -144,6 +144,29 @@ describe("container mutation", () => {
     expect(second.dependency.version).toBe(2);
   });
 
+  test("invalidates cached dependents through aliases", () => {
+    const TARGET = token<{ readonly value: number }>("TARGET");
+    const ALIAS = token<{ readonly value: number }>("ALIAS");
+    const HOLDER = token<{ readonly target: { readonly value: number } }>(
+      "HOLDER",
+    );
+    const container = new Container();
+    container.register(TARGET, { useValue: { value: 1 } });
+    container.register(ALIAS, { useExisting: TARGET });
+    container.register(HOLDER, {
+      inject: [ALIAS],
+      scope: "singleton",
+      useFactory: (target) => ({ target }),
+    });
+
+    const first = container.resolve(HOLDER);
+    container.rebind(TARGET, { useValue: { value: 2 } });
+    const second = container.resolve(HOLDER);
+
+    expect(second).not.toBe(first);
+    expect(second.target.value).toBe(2);
+  });
+
   test("invalidates cached dependents discovered through dynamic resolution", () => {
     const VALUE = token<number>("VALUE");
     const ROOT = token<{ readonly value: number }>("ROOT");

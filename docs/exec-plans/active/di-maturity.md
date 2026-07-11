@@ -11,10 +11,12 @@ Ecosystem adoption and battle-testing remain external evidence.
 ## Current evidence
 
 - Bun 1.3.14 and minimum Bun 1.3.10 are configured.
-- The complete local merge gate passes: 179 tests,
-  99.32% overall lines, and 100% lines in every source module.
+- The complete local merge gate passes: 183 tests and 11,016 assertions with
+  99.11% overall lines and 99.91% functions. The private-state Container and
+  every focused leaf retain 100% line coverage; the extracted resolution kernel
+  has 95.05% lines and 100% functions.
 - The verified runtime, public API, packaging, compatibility, and harness
-  baseline is committed through `d6014f1`.
+  baseline is committed through `024587d`.
 - The activation-scoped `resolver()` descriptor and provider-level cleanup
   adapters have focused, type, coverage, packed-consumer, and combined-gate
   evidence.
@@ -31,7 +33,7 @@ Ecosystem adoption and battle-testing remain external evidence.
 - Packed consumers now run the same concurrent async-context, error-path,
   singleton-coalescing, scope, and disposal scenario under Bun and Node. Deno
   2.0.0 and 2.8.1 pass type, standard-decorator, and runtime checks locally.
-- Bun 1.3.10 passes the source typecheck, all 179 tests, and the installed
+- Bun 1.3.10 passes the source typecheck, all 183 tests, and the installed
   packed-consumer smoke locally.
 - Container and Resolver optional sync/async resolution preserve every visible
   provider failure and track absent dynamic edges for cache invalidation.
@@ -45,7 +47,7 @@ Ecosystem adoption and battle-testing remain external evidence.
 - Registration now rejects null class dependency tuples and borrowed-provider
   options, while activation, registration-module, and disposal callbacks enforce
   their declared runtime return contracts.
-- Every exported declaration and public method group has IDE-visible TSDoc, and
+- Every public package declaration and method group has IDE-visible TSDoc, and
   the Bun HTTP request-scope example is type-checked and executable.
 - The agent map, architecture record, active plan, and mechanical harness check
   are present, and both focused and combined harness checks pass.
@@ -85,10 +87,14 @@ Ecosystem adoption and battle-testing remain external evidence.
   deterministic creation-time initialization.
 - Pack a release once, lint and consume that exact archive, then pass the same
   file to `npm publish`; do not rebuild an unverified publication artifact.
-- Keep the source boundary to six files: an explicit `index.ts` public facade;
-  `types.ts`, `dependencies.ts`, `providers.ts`, and `errors.ts` leaves; and one
-  cohesive private-state `container.ts` kernel. Do not expose internal modules
-  as package subpaths or introduce runtime dependencies for this split.
+- Keep the source boundary to seven files: an explicit `index.ts` public facade;
+  `types.ts`, `dependencies.ts`, `providers.ts`, and `errors.ts` leaves; a
+  container-state-free `resolution.ts` kernel; and one private-state
+  `container.ts` orchestrator. Do not expose internal modules as package
+  subpaths or introduce runtime dependencies for this split.
+- Strip internal resolution declarations from the build. The module still emits
+  an empty sibling declaration for Deno self-types, while the aggregate API hash
+  continues to cover that path.
 - Hash the path and normalized content of every emitted declaration, and apply
   compressed-size budgets to the aggregate emitted JavaScript and declaration
   sets so modularization cannot bypass the existing gates.
@@ -111,8 +117,9 @@ Ecosystem adoption and battle-testing remain external evidence.
 ## In progress
 
 - Establish the external GitHub/npm release baseline once the final repository
-  coordinates and publication authority are available, then verify the
-  configured remote compatibility matrix and OIDC provenance path.
+  coordinates and publication authority are available. Bootstrap the first npm
+  version with maintainer 2FA, configure the trusted publisher, then verify the
+  remote compatibility matrix and provenance attestation.
 
 ## Remaining work
 
@@ -123,6 +130,8 @@ Ecosystem adoption and battle-testing remain external evidence.
   compatibility proof.
 - After a GitHub URL exists, add package identity metadata and verify remote CI,
   trusted publishing, and provenance.
+- Enable private vulnerability reporting and replace the provisional security
+  route with the final advisory URL or a monitored fallback contact.
 
 ## Exit criteria
 
@@ -264,3 +273,29 @@ Ecosystem adoption and battle-testing remain external evidence.
   benchmarks, and final independent contract, harness, and minimality reviews.
 - 2026-07-11: committed the verified profile-guided resolution, runtime-boundary
   validation, and peer-free benchmark baseline as `d6014f1`.
+- 2026-07-11: added a human contribution guide and a native-YAML bug issue form
+  that requires runtime, TypeScript, reproduction, complete-error, and expected
+  behavior evidence without another dependency.
+- 2026-07-11: made publication fail closed for GitHub prereleases and missing or
+  case-mismatched repository metadata, and made release packing skip lifecycle
+  scripts so it cannot rebuild the already verified output.
+- 2026-07-11: exercised the release gate with synthetic coordinates: unfinished
+  changelog, wrong tag, prerelease, and repository mismatch all failed; the
+  valid path produced one 33-file archive that passed package lint, Bun/Node
+  consumption, and npm 11.18.0 `--dry-run`. Actual OIDC and provenance remain
+  remote-only evidence.
+- 2026-07-11: extracted graph traversal, construction waits, resolution context,
+  runtime dependency collection, and lifetime bookkeeping into the internal
+  `resolution.ts` kernel. `container.ts` fell from 3,087 to 2,544 lines while
+  remaining the sole owner of registry, cache, hierarchy, mutation, ownership,
+  and lifecycle state.
+- 2026-07-11: verified the seven-module artifact with the complete 183-test gate,
+  all tests and package/size checks on Bun 1.3.10, TypeScript current and 5.4,
+  packed Bun/Node consumers, and Deno 2.0.0 and 2.8.1. Aggregate size is 16,140
+  runtime and 5,490 declaration gzip bytes on Bun 1.3.14; public declarations
+  are byte-for-byte unchanged apart from the new empty internal declaration
+  path.
+- 2026-07-11: independent five-process exact-case measurements found no material
+  modularization regression: warm singleton median 63.27 ns versus the recorded
+  62.11 ns, and transient class median 146.47 ns versus 150.16 ns, both within
+  prior measurement noise.

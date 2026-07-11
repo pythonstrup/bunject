@@ -17,6 +17,7 @@ Use this page as the stable map for repository knowledge.
 - [Release history](../CHANGELOG.md)
 - [Support policy](./support.md)
 - [Security policy](../SECURITY.md)
+- [Contribution guide](../CONTRIBUTING.md)
 
 ## Execution records
 

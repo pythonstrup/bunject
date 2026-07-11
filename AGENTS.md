@@ -12,17 +12,21 @@ changing behavior.
   evidence, and remaining work.
 - [Maturity criteria](./docs/maturity.md): feature and engineering gates.
 - [Harness](./docs/harness.md): the agent feedback loop and mechanical checks.
+- [Contributing](./CONTRIBUTING.md): the human change and evidence workflow.
 
 ## Repository map
 
 - `src/index.ts`: the explicit public facade; it contains no runtime kernel.
 - `src/types.ts`, `src/dependencies.ts`, `src/providers.ts`, and `src/errors.ts`:
   focused type, descriptor, provider, and error leaves around the kernel.
-- `src/container.ts`: the cohesive private-state resolution and lifecycle kernel.
+- `src/resolution.ts`: container-state-free graph validation, inspection, and
+  resolution bookkeeping; it is internal, not a package subpath.
+- `src/container.ts`: the private-state container and lifecycle orchestrator.
 - `test/`: runtime, type, property, stress, lifecycle, and package regressions.
 - `scripts/`: package, API, size, release, compatibility, and harness checks.
 - `bench/`: Bunject and peer microbenchmarks; evidence, not a fastest claim.
 - `.github/workflows/`: configured CI and trusted-publishing release flow.
+- `.github/ISSUE_TEMPLATE/bug.yml`: structured runtime bug evidence.
 
 Only the package root is public. Source and emitted internal module paths are
 implementation details and must not become package subpath exports.

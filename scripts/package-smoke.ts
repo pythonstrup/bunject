@@ -142,6 +142,7 @@ async function assertPackedPayload(): Promise<void> {
       "errors",
       "index",
       "providers",
+      "resolution",
       "types",
     ].flatMap((module) => [
       `dist/${module}.d.ts`,
