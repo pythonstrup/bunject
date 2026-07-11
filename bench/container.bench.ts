@@ -9,8 +9,12 @@ class Singleton {}
 class Transient {}
 
 const bunject = new Container();
-bunject.register(Singleton, { useClass: Singleton, scope: "singleton" });
-bunject.register(Transient);
+bunject.register(Singleton, {
+  inject: [],
+  useClass: Singleton,
+  scope: "singleton",
+});
+bunject.register(Transient, { inject: [], useClass: Transient });
 bunject.resolve(Singleton);
 
 const inversify = new InversifyContainer();

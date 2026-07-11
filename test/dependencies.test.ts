@@ -114,6 +114,36 @@ describe("dependency descriptors", () => {
     expect(calls).toBe(0);
   });
 
+  test("injects async all() bindings in order and coalesces them", async () => {
+    const HOOK = token<number>("HOOK");
+    const ROOT = token<readonly number[]>("ROOT");
+    let calls = 0;
+    const container = new Container();
+    for (const value of [1, 2]) {
+      container.registerMulti(HOOK, {
+        scope: "singleton",
+        useFactoryAsync: async () => {
+          calls += 1;
+          await Promise.resolve();
+          return value;
+        },
+      });
+    }
+    container.register(ROOT, {
+      inject: [all(HOOK)],
+      scope: "singleton",
+      useFactoryAsync: async (hooks) => hooks,
+    });
+
+    const [first, second] = await Promise.all([
+      container.resolveAsync(ROOT),
+      container.resolveAsync(ROOT),
+    ]);
+    expect(first).toEqual([1, 2]);
+    expect(second).toBe(first);
+    expect(calls).toBe(2);
+  });
+
   test("lazy defers validation and uses the latest registry", () => {
     const TARGET = token<number>("TARGET");
     const ROOT = token<Lazy<number>>("ROOT");

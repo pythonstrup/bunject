@@ -41,27 +41,41 @@ export interface LazyDependency<T> {
   readonly token: Token<T>;
 }
 
+export interface ResolverDependency {
+  readonly [dependencyDescriptorType]: "resolver";
+}
+
 export interface Lazy<T> {
-  resolve(): T;
-  resolveAsync(): Promise<T>;
+  readonly resolve: () => T;
+  readonly resolveAsync: () => Promise<T>;
+}
+
+export interface Resolver {
+  readonly resolve: <T>(token: Token<T>) => T;
+  readonly resolveAsync: <T>(token: Token<T>) => Promise<T>;
+  readonly resolveAll: <T>(token: Token<T>) => readonly T[];
+  readonly resolveAllAsync: <T>(token: Token<T>) => Promise<readonly T[]>;
 }
 
 export type Dependency<T = any> =
   | Token<T>
   | OptionalDependency<T>
   | AllDependency<T>
-  | LazyDependency<T>;
+  | LazyDependency<T>
+  | ResolverDependency;
 
 export type DependencyValue<TDependency extends Dependency<any>> =
-  TDependency extends OptionalDependency<infer TValue>
-    ? TValue | undefined
-    : TDependency extends AllDependency<infer TValue>
-      ? readonly TValue[]
-      : TDependency extends LazyDependency<infer TValue>
-        ? Lazy<TValue>
-        : TDependency extends Token<any>
-          ? TokenValue<TDependency>
-          : never;
+  TDependency extends ResolverDependency
+    ? Resolver
+    : TDependency extends OptionalDependency<infer TValue>
+      ? TValue | undefined
+      : TDependency extends AllDependency<infer TValue>
+        ? readonly TValue[]
+        : TDependency extends LazyDependency<infer TValue>
+          ? Lazy<TValue>
+          : TDependency extends Token<any>
+            ? TokenValue<TDependency>
+            : never;
 
 export type DependencyValues<TDependencies extends readonly Dependency<any>[]> = {
   -readonly [TIndex in keyof TDependencies]: DependencyValue<
@@ -140,7 +154,22 @@ export interface ActivationContext<T> {
 export type ActivationHook<T> = (
   value: T,
   context: ActivationContext<T>,
-) => void;
+) => undefined;
+
+export interface DisposalContext<T> {
+  readonly container: Container;
+  readonly token: Token<T>;
+}
+
+export type DisposalHook<T> = (
+  value: T,
+  context: DisposalContext<T>,
+) => undefined;
+
+export type AsyncDisposalHook<T> = (
+  value: T,
+  context: DisposalContext<T>,
+) => PromiseLike<void>;
 
 export type ProviderKind =
   | "class"
@@ -149,12 +178,22 @@ export type ProviderKind =
   | "asyncFactory"
   | "existing";
 
-export type DependencyKind = "required" | "optional" | "all" | "lazy";
+export type DependencyKind =
+  | "required"
+  | "optional"
+  | "all"
+  | "lazy"
+  | "resolver";
 
-export interface InspectedDependency {
-  readonly token: Token<any>;
-  readonly kind: DependencyKind;
-}
+export type InspectedDependency =
+  | {
+      readonly token: Token<any>;
+      readonly kind: Exclude<DependencyKind, "resolver">;
+    }
+  | {
+      readonly token?: never;
+      readonly kind: "resolver";
+    };
 
 export interface InspectedProvider {
   readonly token: Token<any>;
@@ -241,7 +280,9 @@ export interface RegistrationRegistry {
   ): this;
 }
 
-export type RegistrationModule = (registry: RegistrationRegistry) => void;
+export type RegistrationModule = (
+  registry: RegistrationRegistry,
+) => undefined;
 
 export interface ClassProvider<
   T,
@@ -255,6 +296,8 @@ export interface ClassProvider<
   readonly scope?: Scope;
   readonly inject?: TDependencies;
   readonly onActivation?: ActivationHook<T>;
+  readonly onDisposal?: DisposalHook<T>;
+  readonly onDisposalAsync?: AsyncDisposalHook<T>;
   readonly useValue?: never;
   readonly useFactory?: never;
   readonly useFactoryAsync?: never;
@@ -281,6 +324,8 @@ export interface ValueProvider<T> {
   readonly useFactoryAsync?: never;
   readonly useExisting?: never;
   readonly onActivation?: never;
+  readonly onDisposal?: never;
+  readonly onDisposalAsync?: never;
 }
 
 export interface FactoryProvider<
@@ -293,6 +338,8 @@ export interface FactoryProvider<
   ) => NonPromise<T>;
   readonly scope?: Scope;
   readonly onActivation?: ActivationHook<T>;
+  readonly onDisposal?: DisposalHook<T>;
+  readonly onDisposalAsync?: AsyncDisposalHook<T>;
   readonly useClass?: never;
   readonly useValue?: never;
   readonly useFactoryAsync?: never;
@@ -309,6 +356,8 @@ export interface AsyncFactoryProvider<
   ) => PromiseLike<NonPromise<T>>;
   readonly scope?: Scope;
   readonly onActivation?: ActivationHook<T>;
+  readonly onDisposal?: DisposalHook<T>;
+  readonly onDisposalAsync?: AsyncDisposalHook<T>;
   readonly useClass?: never;
   readonly useValue?: never;
   readonly useFactory?: never;
@@ -324,6 +373,8 @@ export interface ExistingProvider<T> {
   readonly useFactory?: never;
   readonly useFactoryAsync?: never;
   readonly onActivation?: never;
+  readonly onDisposal?: never;
+  readonly onDisposalAsync?: never;
 }
 
 export type Provider<T> =
@@ -371,6 +422,8 @@ type NormalizedProvider =
       readonly inject: readonly AnyDependency[];
       readonly scope: Scope;
       readonly onActivation: ActivationHook<any> | undefined;
+      readonly onDisposal: DisposalHook<any> | undefined;
+      readonly onDisposalAsync: AsyncDisposalHook<any> | undefined;
     }
   | {
       readonly kind: "value";
@@ -382,6 +435,8 @@ type NormalizedProvider =
       readonly inject: readonly AnyDependency[];
       readonly scope: Scope;
       readonly onActivation: ActivationHook<any> | undefined;
+      readonly onDisposal: DisposalHook<any> | undefined;
+      readonly onDisposalAsync: AsyncDisposalHook<any> | undefined;
     }
   | {
       readonly kind: "asyncFactory";
@@ -391,6 +446,8 @@ type NormalizedProvider =
       readonly inject: readonly AnyDependency[];
       readonly scope: Scope;
       readonly onActivation: ActivationHook<any> | undefined;
+      readonly onDisposal: DisposalHook<any> | undefined;
+      readonly onDisposalAsync: AsyncDisposalHook<any> | undefined;
     }
   | {
       readonly kind: "existing";
@@ -438,9 +495,11 @@ const runtimeDependencyParents = new WeakMap<
 >();
 
 interface OwnedResource {
-  readonly value: object;
+  readonly value: unknown;
   readonly dispose: unknown;
   readonly disposeAsync: unknown;
+  readonly disposeIsHook: boolean;
+  readonly disposeAsyncIsHook: boolean;
 }
 
 type LifecycleState = "active" | "disposing-async" | "disposed";
@@ -454,7 +513,7 @@ interface DisposalOperation {
   readonly promise: Promise<void>;
 }
 
-interface DisposalContext {
+interface DisposalExecutionContext {
   readonly operation: DisposalOperation;
   readonly path: readonly Container[];
 }
@@ -471,7 +530,6 @@ interface ResolutionSession {
 }
 
 interface ContainerFamily {
-  activeResolutions: number;
   mutating: boolean;
 }
 
@@ -501,7 +559,7 @@ interface ResolutionContext {
 }
 
 const resolutionContext = new AsyncLocalStorage<ResolutionContext>();
-const disposalContext = new AsyncLocalStorage<DisposalContext>();
+const disposalContext = new AsyncLocalStorage<DisposalExecutionContext>();
 
 export function token<T>(description: string): InjectionToken<T> {
   return Symbol(description) as InjectionToken<T>;
@@ -528,6 +586,12 @@ export function lazy<T>(target: Token<T>): LazyDependency<T> {
   return Object.freeze({
     [dependencyDescriptorType]: "lazy" as const,
     token: target,
+  });
+}
+
+export function resolver(): ResolverDependency {
+  return Object.freeze({
+    [dependencyDescriptorType]: "resolver" as const,
   });
 }
 
@@ -620,7 +684,7 @@ export class Container implements Disposable, AsyncDisposable {
   readonly #ownedValues = new WeakSet<object>();
   readonly #inFlight = new Set<Promise<unknown>>();
   #parent: Container | undefined;
-  #family: ContainerFamily = { activeResolutions: 0, mutating: false };
+  #family: ContainerFamily = { mutating: false };
   #activeResolutions = 0;
   #lifecycle: LifecycleState = "active";
   #disposePromise: Promise<void> | undefined;
@@ -899,7 +963,7 @@ export class Container implements Disposable, AsyncDisposable {
   }
 
   createScope(): Container {
-    this.#assertMutable("create a scope");
+    this.#assertMutable("create a scope", undefined, true);
     return this.#runMutation(() => {
       const child = new Container();
       child.#parent = this;
@@ -1006,17 +1070,31 @@ export class Container implements Disposable, AsyncDisposable {
   }
 
   resolveAll<T>(token: Token<T>): readonly T[] {
+    return this.#resolveAllPublicSync(token);
+  }
+
+  #resolveAllPublicSync<T>(
+    token: Token<T>,
+    capturedCaptor?: LifetimeCaptor,
+  ): readonly T[] {
     assertToken(token);
     this.#assertCanResolve(token);
     const context = this.#activeContext();
     this.#assertDynamicLookup(context, token);
     recordDynamicDependency(context?.collector, this, token);
-    const captor = context?.captor;
+    const captor = strongerCaptor(context?.captor, capturedCaptor);
+    const captors = captorConstraints(context?.captor, capturedCaptor);
     const session = context?.session ?? createResolutionSession();
     const ancestry = context?.path ?? [];
     const locked = this.#beginResolution();
     try {
-      this.#validateGraph(token, true, true, captor, ancestry);
+      if (captors.length === 0) {
+        this.#validateGraph(token, true, true, undefined, ancestry);
+      } else {
+        for (const constraint of captors) {
+          this.#validateGraph(token, true, true, constraint, ancestry);
+        }
+      }
       const bindings = this.#lookup(token);
       if (!bindings) return [];
       const path = enterPath(token, ancestry);
@@ -1036,26 +1114,54 @@ export class Container implements Disposable, AsyncDisposable {
   }
 
   resolveAllAsync<T>(token: Token<T>): Promise<readonly T[]> {
+    return this.#resolveAllPublicAsync(token);
+  }
+
+  #resolveAllPublicAsync<T>(
+    token: Token<T>,
+    capturedCaptor?: LifetimeCaptor,
+  ): Promise<readonly T[]> {
+    let context: ResolutionContext | undefined;
     try {
       assertToken(token);
       this.#assertCanResolve(token);
+      context = this.#activeContext();
+      this.#assertDynamicLookup(context, token);
     } catch (error) {
       return Promise.reject(error);
     }
 
-    return this.#trackInFlight(this.#resolveAllAsyncPublic(token));
+    recordDynamicDependency(context?.collector, this, token);
+    const captor = strongerCaptor(context?.captor, capturedCaptor);
+    const captors = captorConstraints(context?.captor, capturedCaptor);
+    return this.#trackInFlight(
+      this.#resolveAllAsyncPublic(
+        token,
+        captor,
+        captors,
+        context?.collector,
+      ),
+    );
   }
 
-  async #resolveAllAsyncPublic<T>(token: Token<T>): Promise<readonly T[]> {
+  async #resolveAllAsyncPublic<T>(
+    token: Token<T>,
+    captor?: LifetimeCaptor,
+    captors: readonly LifetimeCaptor[] = captor ? [captor] : [],
+    collector?: RuntimeDependencies,
+  ): Promise<readonly T[]> {
     const context = this.#activeContext();
-    this.#assertDynamicLookup(context, token);
-    recordDynamicDependency(context?.collector, this, token);
-    const captor = context?.captor;
     const session = context?.session ?? createResolutionSession();
     const ancestry = context?.path ?? [];
     const locked = this.#beginResolution();
     try {
-      this.#validateGraph(token, false, true, captor, ancestry);
+      if (captors.length === 0) {
+        this.#validateGraph(token, false, true, undefined, ancestry);
+      } else {
+        for (const constraint of captors) {
+          this.#validateGraph(token, false, true, constraint, ancestry);
+        }
+      }
       const bindings = this.#lookup(token);
       if (!bindings) return [];
       const path = enterPath(token, ancestry);
@@ -1068,7 +1174,7 @@ export class Container implements Disposable, AsyncDisposable {
             path,
             session,
             captor,
-            context?.collector,
+            collector,
           ),
         );
       }
@@ -1149,13 +1255,19 @@ export class Container implements Disposable, AsyncDisposable {
           registration.provider.kind === "value"
             ? []
             : registration.provider.inject.map<InspectedDependency>(
-                (dependency) =>
-                  Object.freeze({
-                    token: isDependencyDescriptor(dependency)
+                (dependency): InspectedDependency => {
+                  if (isResolverDependency(dependency)) {
+                    return Object.freeze({ kind: "resolver" });
+                  }
+                  return Object.freeze({
+                    token: isTokenDependencyDescriptor(dependency)
                       ? dependency.token
                       : dependency,
-                    kind: dependencyKind(dependency),
-                  }),
+                    kind: isTokenDependencyDescriptor(dependency)
+                      ? dependency[dependencyDescriptorType]
+                      : "required",
+                  });
+                },
               );
         providers.push(
           Object.freeze({
@@ -1170,7 +1282,9 @@ export class Container implements Disposable, AsyncDisposable {
         );
 
         for (const dependency of dependencies) {
-          if (dependency.kind === "lazy") continue;
+          if (dependency.kind === "lazy" || dependency.kind === "resolver") {
+            continue;
+          }
           visit(
             dependency.token,
             effectiveLookup,
@@ -1473,7 +1587,8 @@ export class Container implements Disposable, AsyncDisposable {
 
         if (registration.provider.kind === "value") continue;
         for (const dependency of registration.provider.inject) {
-          const dependencyToken = isDependencyDescriptor(dependency)
+          if (isResolverDependency(dependency)) continue;
+          const dependencyToken = isTokenDependencyDescriptor(dependency)
             ? dependency.token
             : dependency;
           if (!effectiveLookup.#lookup(dependencyToken)) continue;
@@ -1559,10 +1674,11 @@ export class Container implements Disposable, AsyncDisposable {
       stack.push({ token, registration, lookup: effectiveLookup });
       if (provider.kind !== "value") {
         for (const dependency of provider.inject) {
-          const dependencyToken = isDependencyDescriptor(dependency)
+          if (isResolverDependency(dependency)) continue;
+          const dependencyToken = isTokenDependencyDescriptor(dependency)
             ? dependency.token
             : dependency;
-          if (isDependencyDescriptor(dependency, "lazy")) {
+          if (isTokenDependencyDescriptor(dependency, "lazy")) {
             if (nextCaptor) {
               validateLazyLifetime(
                 dependencyToken,
@@ -1575,7 +1691,7 @@ export class Container implements Disposable, AsyncDisposable {
             continue;
           }
           if (
-            isDependencyDescriptor(dependency, "optional") &&
+            isTokenDependencyDescriptor(dependency, "optional") &&
             !effectiveLookup.#lookup(dependencyToken)
           ) {
             continue;
@@ -1584,7 +1700,7 @@ export class Container implements Disposable, AsyncDisposable {
             dependencyToken,
             effectiveLookup,
             nextCaptor,
-            isDependencyDescriptor(dependency, "all"),
+            isTokenDependencyDescriptor(dependency, "all"),
           );
         }
       }
@@ -1755,7 +1871,7 @@ export class Container implements Disposable, AsyncDisposable {
       }
     }
 
-    if (isPromiseLike(instance)) {
+    if (providerPromiseLike(instance, path)) {
       consumeRejectedPromise(instance);
       throw resolutionError(
         "ASYNC_IN_SYNC",
@@ -1777,10 +1893,16 @@ export class Container implements Disposable, AsyncDisposable {
         collector,
       );
     } catch (cause) {
-      activation.#throwActivationFailure(instance, path, cause);
+      activation.#throwActivationFailure(
+        provider,
+        token,
+        instance,
+        path,
+        cause,
+      );
     }
     try {
-      activation.#trackOwned(instance);
+      activation.#trackOwned(provider, token, instance);
     } catch (cause) {
       throw providerFailure(path, cause);
     }
@@ -1973,7 +2095,10 @@ export class Container implements Disposable, AsyncDisposable {
     captor?: LifetimeCaptor,
     collector?: RuntimeDependencies,
   ): unknown {
-    if (!isDependencyDescriptor(dependency)) {
+    if (isResolverDependency(dependency)) {
+      return this.#createResolver(captor);
+    }
+    if (!isTokenDependencyDescriptor(dependency)) {
       return this.#resolveSync(dependency, path, session, captor, collector);
     }
     if (dependency[dependencyDescriptorType] === "optional") {
@@ -2006,7 +2131,10 @@ export class Container implements Disposable, AsyncDisposable {
     captor?: LifetimeCaptor,
     collector?: RuntimeDependencies,
   ): Promise<unknown> {
-    if (!isDependencyDescriptor(dependency)) {
+    if (isResolverDependency(dependency)) {
+      return this.#createResolver(captor);
+    }
+    if (!isTokenDependencyDescriptor(dependency)) {
       return this.#resolveAsync(dependency, path, session, captor, collector);
     }
     if (dependency[dependencyDescriptorType] === "optional") {
@@ -2030,6 +2158,18 @@ export class Container implements Disposable, AsyncDisposable {
       );
     }
     return this.#createLazyResolver(dependency.token, captor);
+  }
+
+  #createResolver(captor?: LifetimeCaptor): Resolver {
+    return Object.freeze({
+      resolve: <T>(target: Token<T>) => this.#resolvePublicSync(target, captor),
+      resolveAsync: <T>(target: Token<T>) =>
+        this.#resolvePublicAsync(target, captor),
+      resolveAll: <T>(target: Token<T>) =>
+        this.#resolveAllPublicSync(target, captor),
+      resolveAllAsync: <T>(target: Token<T>) =>
+        this.#resolveAllPublicAsync(target, captor),
+    });
   }
 
   #createLazyResolver<T>(
@@ -2139,7 +2279,7 @@ export class Container implements Disposable, AsyncDisposable {
       } catch (cause) {
         throw providerOrResolutionFailure(path, cause);
       }
-      if (isPromiseLike(instance)) {
+      if (providerPromiseLike(instance, path)) {
         consumeRejectedPromise(instance);
         throw providerFailure(
           path,
@@ -2163,7 +2303,7 @@ export class Container implements Disposable, AsyncDisposable {
       } catch (cause) {
         throw providerOrResolutionFailure(path, cause);
       }
-      if (isPromiseLike(instance)) {
+      if (providerPromiseLike(instance, path)) {
         consumeRejectedPromise(instance);
         throw providerFailure(
           path,
@@ -2223,10 +2363,16 @@ export class Container implements Disposable, AsyncDisposable {
             collector,
           );
         } catch (cause) {
-          this.#throwActivationFailure(instance, path, cause);
+          this.#throwActivationFailure(
+            provider,
+            token,
+            instance,
+            path,
+            cause,
+          );
         }
         try {
-          this.#trackOwned(instance);
+          this.#trackOwned(provider, token, instance);
         } catch (cause) {
           throw providerFailure(path, cause);
         }
@@ -2236,12 +2382,14 @@ export class Container implements Disposable, AsyncDisposable {
   }
 
   #throwActivationFailure(
+    provider: NormalizedProvider,
+    token: AnyToken,
     value: unknown,
     path: readonly AnyToken[],
     cause: unknown,
   ): never {
     try {
-      this.#trackOwned(value);
+      this.#trackOwned(provider, token, value);
     } catch (ownershipCause) {
       throw providerFailure(
         path,
@@ -2496,8 +2644,13 @@ export class Container implements Disposable, AsyncDisposable {
 
     if (registration.provider.kind === "value") return false;
     for (const dependency of registration.provider.inject) {
-      if (isDependencyDescriptor(dependency, "lazy")) continue;
-      const dependencyToken = isDependencyDescriptor(dependency)
+      if (
+        isResolverDependency(dependency) ||
+        isTokenDependencyDescriptor(dependency, "lazy")
+      ) {
+        continue;
+      }
+      const dependencyToken = isTokenDependencyDescriptor(dependency)
         ? dependency.token
         : dependency;
       if (
@@ -2629,24 +2782,54 @@ export class Container implements Disposable, AsyncDisposable {
     return operation;
   }
 
-  #trackOwned(value: unknown): void {
-    if (
-      value === null ||
-      (typeof value !== "object" && typeof value !== "function")
-    ) {
-      return;
-    }
+  #trackOwned(
+    provider: NormalizedProvider,
+    token: AnyToken,
+    value: unknown,
+  ): void {
+    const resource =
+      value !== null &&
+      (typeof value === "object" || typeof value === "function")
+        ? (value as object)
+        : undefined;
+    if (resource && this.#ownedValues.has(resource)) return;
 
-    const resource = value as object;
-    if (this.#ownedValues.has(resource)) return;
-    const dispose: unknown = Reflect.get(resource, Symbol.dispose);
-    const disposeAsync: unknown = Reflect.get(resource, Symbol.asyncDispose);
+    const onDisposal =
+      provider.kind === "value" || provider.kind === "existing"
+        ? undefined
+        : provider.onDisposal;
+    const onDisposalAsync =
+      provider.kind === "value" || provider.kind === "existing"
+        ? undefined
+        : provider.onDisposalAsync;
+    let dispose: unknown;
+    let disposeAsync: unknown;
+    const explicit = onDisposal !== undefined || onDisposalAsync !== undefined;
+    if (explicit) {
+      const context = Object.freeze({ container: this, token });
+      dispose = onDisposal
+        ? () => onDisposal(value, context)
+        : undefined;
+      disposeAsync = onDisposalAsync
+        ? () => onDisposalAsync(value, context)
+        : undefined;
+    } else {
+      if (!resource) return;
+      dispose = Reflect.get(resource, Symbol.dispose);
+      disposeAsync = Reflect.get(resource, Symbol.asyncDispose);
+    }
     if (
       (dispose !== undefined && dispose !== null) ||
       (disposeAsync !== undefined && disposeAsync !== null)
     ) {
-      this.#ownedValues.add(resource);
-      this.#owned.push({ value: resource, dispose, disposeAsync });
+      if (resource) this.#ownedValues.add(resource);
+      this.#owned.push({
+        value,
+        dispose,
+        disposeAsync,
+        disposeIsHook: onDisposal !== undefined,
+        disposeAsyncIsHook: onDisposalAsync !== undefined,
+      });
     }
   }
 
@@ -2707,7 +2890,12 @@ export class Container implements Disposable, AsyncDisposable {
             Symbol.dispose,
           );
           const result = dispose?.call(resource.value);
-          if (isPromiseLike(result)) consumeRejectedPromise(result);
+          if (isPromiseLike(result)) {
+            consumeRejectedPromise(result);
+            if (resource.disposeIsHook) {
+              throw new TypeError("onDisposal must be synchronous.");
+            }
+          }
         } catch (error) {
           appendDisposalError(operation.errors, error);
         }
@@ -2786,14 +2974,36 @@ export class Container implements Disposable, AsyncDisposable {
           Symbol.asyncDispose,
         );
         if (disposeAsync) {
-          await disposeAsync.call(resource.value);
+          const result = disposeAsync.call(resource.value);
+          if (resource.disposeAsyncIsHook && !isPromiseLike(result)) {
+            throw new TypeError(
+              "onDisposalAsync must return a Promise-like value.",
+            );
+          }
+          await result;
         } else {
           const dispose = checkedDisposalMethod(
             resource.dispose,
             Symbol.dispose,
           );
           const result = dispose?.call(resource.value);
-          if (isPromiseLike(result)) consumeRejectedPromise(result);
+          if (isPromiseLike(result)) {
+            if (resource.disposeIsHook) {
+              try {
+                await result;
+              } catch (cause) {
+                throw new AggregateError(
+                  [
+                    new TypeError("onDisposal must be synchronous."),
+                    cause,
+                  ],
+                  "Synchronous disposal callback returned a rejected Promise.",
+                );
+              }
+              throw new TypeError("onDisposal must be synchronous.");
+            }
+            consumeRejectedPromise(result);
+          }
         }
       } catch (error) {
         appendDisposalError(operation.errors, error);
@@ -2827,7 +3037,6 @@ export class Container implements Disposable, AsyncDisposable {
   }
 
   #beginResolution(): readonly Container[] {
-    this.#family.activeResolutions += 1;
     const locked: Container[] = [];
     for (let current: Container | undefined = this; current; current = current.#parent) {
       current.#activeResolutions += 1;
@@ -2838,7 +3047,6 @@ export class Container implements Disposable, AsyncDisposable {
 
   #endResolution(locked: readonly Container[]): void {
     for (const container of locked) container.#activeResolutions -= 1;
-    this.#family.activeResolutions -= 1;
   }
 
   #assertCanResolve(token: AnyToken): void {
@@ -2871,7 +3079,11 @@ export class Container implements Disposable, AsyncDisposable {
     );
   }
 
-  #assertMutable(action: string, token?: AnyToken): void {
+  #assertMutable(
+    action: string,
+    token?: AnyToken,
+    allowActiveResolutions = false,
+  ): void {
     if (this.#lifecycle !== "active") {
       throw registrationError(
         "CONTAINER_DISPOSED",
@@ -2879,7 +3091,7 @@ export class Container implements Disposable, AsyncDisposable {
         token,
       );
     }
-    this.#assertNotBusy(action);
+    this.#assertNotBusy(action, allowActiveResolutions);
   }
 
   #runMutation<T>(operation: () => T): T {
@@ -2891,9 +3103,9 @@ export class Container implements Disposable, AsyncDisposable {
     }
   }
 
-  #assertNotBusy(action: string): void {
+  #assertNotBusy(action: string, allowActiveResolutions = false): void {
     if (
-      this.#family.activeResolutions === 0 &&
+      (allowActiveResolutions || this.#activeResolutions === 0) &&
       !this.#family.mutating
     ) {
       return;
@@ -2909,21 +3121,33 @@ function createResolutionSession(): ResolutionSession {
   return { caches: new Map() };
 }
 
-function isDependencyDescriptor(
+type TokenDependencyDescriptor =
+  | OptionalDependency<any>
+  | AllDependency<any>
+  | LazyDependency<any>;
+
+function isTokenDependencyDescriptor(
   value: AnyDependency,
   kind?: "optional" | "all" | "lazy",
-): value is OptionalDependency<any> | AllDependency<any> | LazyDependency<any> {
+): value is TokenDependencyDescriptor {
   return (
     typeof value === "object" &&
     value !== null &&
     dependencyDescriptorType in value &&
+    value[dependencyDescriptorType] !== "resolver" &&
     (kind === undefined || value[dependencyDescriptorType] === kind)
   );
 }
 
-function dependencyKind(dependency: AnyDependency): DependencyKind {
-  if (!isDependencyDescriptor(dependency)) return "required";
-  return dependency[dependencyDescriptorType];
+function isResolverDependency(
+  value: AnyDependency,
+): value is ResolverDependency {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    dependencyDescriptorType in value &&
+    value[dependencyDescriptorType] === "resolver"
+  );
 }
 
 function createConstruction(
@@ -3115,6 +3339,7 @@ function normalizeProvider(
   }
 
   if ("useExisting" in provider) {
+    assertBorrowedProvider(provider, registeredToken);
     assertToken(provider.useExisting, registeredToken);
     return {
       kind: "existing",
@@ -3124,7 +3349,19 @@ function normalizeProvider(
   }
 
   if ("useValue" in provider) {
-    if (isPromiseLike(provider.useValue)) {
+    assertBorrowedProvider(provider, registeredToken);
+    let promiseLike: boolean;
+    try {
+      promiseLike = isPromiseLike(provider.useValue);
+    } catch (cause) {
+      throw registrationError(
+        "INVALID_PROVIDER",
+        `Could not inspect useValue for ${tokenName(registeredToken)}.`,
+        registeredToken,
+        cause,
+      );
+    }
+    if (promiseLike) {
       throw registrationError(
         "INVALID_PROVIDER",
         `Promise-like values are not supported for ${tokenName(registeredToken)}. ` +
@@ -3146,6 +3383,10 @@ function normalizeProvider(
     const metadata = injectableOptions.get(provider.useClass);
     const declaredDependencies =
       provider.inject ?? metadata?.inject ?? provider.useClass.inject;
+    const hasDependencyDeclaration =
+      provider.inject !== undefined ||
+      metadata !== undefined ||
+      provider.useClass.inject !== undefined;
     const inheritedDecoratorDependencies =
       inheritedInjectableDependencies(provider.useClass);
     if (
@@ -3159,12 +3400,12 @@ function normalizeProvider(
         registeredToken,
       );
     }
-    if (declaredDependencies === undefined && provider.useClass.length > 0) {
+    if (!hasDependencyDeclaration) {
       throw registrationError(
         "INVALID_PROVIDER",
-        `${tokenName(registeredToken)} has constructor parameters but no ` +
-          "injection declaration. Use @Injectable({ inject }), static inject, " +
-          "or provider.inject.",
+        `${tokenName(registeredToken)} has no injection declaration. Use ` +
+          "@Injectable(), static inject, or provider.inject (including [] for " +
+          "a zero-argument class).",
         registeredToken,
       );
     }
@@ -3182,6 +3423,16 @@ function normalizeProvider(
       ),
       onActivation: checkedActivationHook(
         provider.onActivation,
+        registeredToken,
+      ),
+      onDisposal: checkedDisposalHook(
+        provider.onDisposal,
+        "onDisposal",
+        registeredToken,
+      ),
+      onDisposalAsync: checkedDisposalHook(
+        provider.onDisposalAsync,
+        "onDisposalAsync",
         registeredToken,
       ),
     };
@@ -3206,6 +3457,16 @@ function normalizeProvider(
         provider.onActivation,
         registeredToken,
       ),
+      onDisposal: checkedDisposalHook(
+        provider.onDisposal,
+        "onDisposal",
+        registeredToken,
+      ),
+      onDisposalAsync: checkedDisposalHook(
+        provider.onDisposalAsync,
+        "onDisposalAsync",
+        registeredToken,
+      ),
     };
   }
 
@@ -3225,6 +3486,16 @@ function normalizeProvider(
       provider.onActivation,
       registeredToken,
     ),
+    onDisposal: checkedDisposalHook(
+      provider.onDisposal,
+      "onDisposal",
+      registeredToken,
+    ),
+    onDisposalAsync: checkedDisposalHook(
+      provider.onDisposalAsync,
+      "onDisposalAsync",
+      registeredToken,
+    ),
   };
 }
 
@@ -3236,6 +3507,40 @@ function checkedActivationHook<T>(
     throw registrationError(
       "INVALID_PROVIDER",
       `onActivation for ${tokenName(token)} must be a function.`,
+      token,
+    );
+  }
+  return hook;
+}
+
+function assertBorrowedProvider(
+  provider: AnyProvider,
+  token: AnyToken,
+): void {
+  if (
+    provider.onActivation !== undefined ||
+    provider.onDisposal !== undefined ||
+    provider.onDisposalAsync !== undefined
+  ) {
+    throw registrationError(
+      "INVALID_PROVIDER",
+      `Borrowed provider for ${tokenName(token)} cannot define lifecycle hooks.`,
+      token,
+    );
+  }
+}
+
+function checkedDisposalHook<
+  THook extends DisposalHook<any> | AsyncDisposalHook<any>,
+>(
+  hook: THook | undefined,
+  name: "onDisposal" | "onDisposalAsync",
+  token: AnyToken,
+): THook | undefined {
+  if (hook !== undefined && typeof hook !== "function") {
+    throw registrationError(
+      "INVALID_PROVIDER",
+      `${name} for ${tokenName(token)} must be a function.`,
       token,
     );
   }
@@ -3338,6 +3643,7 @@ function assertDependency(
       readonly [dependencyDescriptorType]: unknown;
       readonly token?: unknown;
     };
+    if (descriptor[dependencyDescriptorType] === "resolver") return;
     if (
       (descriptor[dependencyDescriptorType] === "optional" ||
         descriptor[dependencyDescriptorType] === "all" ||
@@ -3455,12 +3761,12 @@ function formatPath(path: readonly AnyToken[]): string {
 function checkedDisposalMethod(
   value: unknown,
   key: typeof Symbol.dispose | typeof Symbol.asyncDispose,
-): ((this: object) => unknown) | undefined {
+): ((this: unknown) => unknown) | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value !== "function") {
     throw new TypeError(`${String(key)} must be a function.`);
   }
-  return value as (this: object) => unknown;
+  return value as (this: unknown) => unknown;
 }
 
 function hasPendingEntry(cache: ReadonlyMap<Registration, CacheEntry>): boolean {
@@ -3558,6 +3864,17 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
     (typeof value === "object" || typeof value === "function") &&
     typeof (value as PromiseLike<unknown>).then === "function"
   );
+}
+
+function providerPromiseLike(
+  value: unknown,
+  path: readonly AnyToken[],
+): value is PromiseLike<unknown> {
+  try {
+    return isPromiseLike(value);
+  } catch (cause) {
+    throw providerFailure(path, cause);
+  }
 }
 
 function consumeRejectedPromise(value: PromiseLike<unknown>): void {

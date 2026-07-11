@@ -50,7 +50,8 @@ describe("activation hooks", () => {
     const SYNC = token<object>("SYNC");
     const ASYNC = token<object>("ASYNC");
     const container = new Container();
-    const asyncHook = async (): Promise<void> => {};
+    const asyncHook = (async (): Promise<void> => {}) as unknown as () =>
+      undefined;
     container.register(SYNC, {
       useFactory: () => ({}),
       onActivation: asyncHook,

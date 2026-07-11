@@ -2,18 +2,18 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  assertStableRelease,
+  isCalendarDate,
+  parseProjectVersion,
+} from "./project-metadata";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const packageJson = JSON.parse(
   await readFile(join(root, "package.json"), "utf8"),
 ) as { version?: unknown };
-const version = packageJson.version;
-const semverPattern =
-  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
-
-if (typeof version !== "string" || !semverPattern.test(version)) {
-  throw new Error(`package.json contains an invalid SemVer version: ${version}`);
-}
+const projectVersion = parseProjectVersion(packageJson.version);
+const version = projectVersion.value;
 
 const changelog = await readFile(join(root, "CHANGELOG.md"), "utf8");
 const headingPrefix = `## ${version} - `;
@@ -29,10 +29,7 @@ if (headings.length !== 1) {
 
 const release = process.argv.includes("--release");
 const releaseDate = headings[0].slice(headingPrefix.length);
-const parsedReleaseDate = new Date(`${releaseDate}T00:00:00.000Z`);
-const validReleaseDate =
-  !Number.isNaN(parsedReleaseDate.valueOf()) &&
-  parsedReleaseDate.toISOString().slice(0, 10) === releaseDate;
+const validReleaseDate = isCalendarDate(releaseDate);
 if (releaseDate !== "Unreleased" && !validReleaseDate) {
   throw new Error(
     `The ${version} changelog heading must end with Unreleased or YYYY-MM-DD.`,
@@ -40,6 +37,7 @@ if (releaseDate !== "Unreleased" && !validReleaseDate) {
 }
 
 if (release) {
+  assertStableRelease(projectVersion);
   const expectedTag = `v${version}`;
   if (process.env.RELEASE_TAG !== expectedTag) {
     throw new Error(

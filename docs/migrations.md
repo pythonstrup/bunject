@@ -16,6 +16,7 @@ container.get(UserRepository);
 // Bunject
 container.register(DATABASE, { useValue: database });
 container.register(UserRepository, {
+  inject: [DATABASE],
   useClass: UserRepository,
   scope: "singleton",
 });
@@ -47,6 +48,7 @@ container.resolve(UserRepository);
 // Bunject
 container.register(DATABASE, { useValue: database });
 container.register(UserRepository, {
+  inject: [DATABASE],
   useClass: UserRepository,
   scope: "singleton",
 });
@@ -59,8 +61,8 @@ containers map to `createScope()`, `injectAll()` maps to `all()`, and
 `isRegistered(token, true)` maps to `has(token)` (`{ own: true }` disables the
 parent lookup).
 
-TSyringe's conventional `dispose()` interface should be migrated to the
-standard resource protocol:
+TSyringe's conventional `dispose()` interface can use the standard resource
+protocol:
 
 ```ts
 class Connection implements AsyncDisposable {
@@ -69,6 +71,19 @@ class Connection implements AsyncDisposable {
   }
 }
 ```
+
+For an external client that cannot implement the protocol, adapt cleanup on the
+provider instead:
+
+```ts
+container.register(CONNECTION, {
+  useFactory: () => thirdPartyConnection,
+  onDisposalAsync: (connection) => connection.close(),
+});
+```
+
+Awilix `.disposer()` maps to the same provider callback. `useValue` remains
+borrowed; use a factory when Bunject should own an existing external resource.
 
 ## From Awilix
 
@@ -115,10 +130,10 @@ container.register(USER_SERVICE, {
 | Metadata | Explicit tuples; no emitted design metadata |
 | Async | `useFactoryAsync` and `resolveAsync` are explicit |
 | Values | Borrowed and never disposed |
-| Class/factory results | Owned and disposed through standard symbols |
+| Class/factory results | Owned through explicit callbacks or standard symbols |
 | Mutation | Local `rebind`/`unregister`; retired generations live to scope end |
 | Dynamic lookup | Same activation container or an ancestor only |
-| Cycles | Structured error; `lazy()` is the opt-in deferred edge |
+| Cycles | Structured error; `lazy()` or an injected Resolver is the deferred edge |
 
 Run `container.validate(ROOT)` for every migrated root before starting the
 application, then close integration tests with `await using` or an explicit

@@ -68,9 +68,10 @@ const users = container.resolve(UserService);
 ```
 
 `@Injectable()` stores metadata only. Registration remains explicit and imports
-have no global side effects. Zero-argument classes need no decorator; classes
-with constructor parameters must declare them through `@Injectable({ inject })`,
-provider `inject`, or `static inject = [...] as const`.
+have no global side effects. Every class provider declares its constructor
+contract through `@Injectable()`, provider `inject`, or
+`static inject = [...] as const`; use `@Injectable()` or `inject: []` for an
+undecorated zero-argument class.
 
 ## Providers and lifetimes
 
@@ -120,11 +121,11 @@ owner-affine dependencies, while parent scoped and transient providers use the
 active child and its overrides. Disposing a parent disposes descendants first.
 See the complete [Bun HTTP request-scope example](./docs/bun-http.md).
 
-## Multi, optional, all, and lazy dependencies
+## Multi, optional, all, lazy, and resolver dependencies
 
 ```ts
-container.registerMulti(HOOK, { useClass: AuditHook });
-container.registerMulti(HOOK, { useClass: MetricsHook });
+container.registerMulti(HOOK, { inject: [], useClass: AuditHook });
+container.registerMulti(HOOK, { inject: [], useClass: MetricsHook });
 
 container.register(APPLICATION, {
   inject: [optional(CACHE), all(HOOK), lazy(REPORTER)],
@@ -139,6 +140,27 @@ const hooks = container.resolveAll(HOOK);
 nearest complete binding set, including an empty array. `lazy(T)` returns a
 frozen `{ resolve, resolveAsync }` handle, defers construction and missing-token
 validation, and retains the lifetime constraints of its owner.
+
+Use `resolver()` when a provider must choose tokens dynamically or resolve a
+complete multi-binding set:
+
+```ts
+container.register(REPORT_FACTORY, {
+  inject: [resolver()],
+  scope: "scoped",
+  useFactory: (activeResolver) => () => activeResolver.resolve(REPORTER),
+});
+```
+
+The injected `Resolver` is a frozen, read-only surface with `resolve`,
+`resolveAsync`, `resolveAll`, and `resolveAllAsync`. It is bound to the
+provider's activation container: a scoped provider activated in a child sees
+that child, while a parent singleton remains owner-affine.
+
+Calls made during provider activation join the active resolution path and are
+tracked for cycles, lifetimes, and later registry mutation. Calls made after
+activation re-read the latest registry without making their holder depend on a
+future target, but retain the holder's captured lifetime and ownership limits.
 
 Single and multi registration modes cannot be mixed for one token in the same
 container. A local set shadows the complete parent set.
@@ -168,6 +190,7 @@ container.register(CLIENT, {
         : token.name;
     client.attach(container.resolve(LOGGER), name);
   },
+  onDisposalAsync: async (client) => client.close(),
 });
 
 await using container = new Container();
@@ -176,16 +199,29 @@ await using container = new Container();
 `onActivation` is synchronous and runs once for each successfully created
 class or factory value, before caching. Class and factory results that implement
 `Symbol.dispose` or `Symbol.asyncDispose` are owned by the activation scope and
-disposed in reverse acquisition order. `useValue` values are borrowed and are
-never disposed. `disposeAsync()` waits for in-flight construction, prefers the
-async protocol, continues after failures, and reports an `AggregateError`.
+disposed in reverse acquisition order. For third-party resources, providers may
+declare `onDisposal` and/or `onDisposalAsync`; when present, that explicit pair
+replaces the resource's Symbol protocol. `disposeAsync()` prefers the async
+callback and falls back to the sync callback. `onDisposal` must not return a
+Promise; use `onDisposalAsync` for asynchronous work. `dispose()` rejects an
+async-only tree before cleanup begins. `useValue` and alias results are borrowed
+and never own cleanup. Disposal continues after failures and reports an
+`AggregateError`. When providers return the same object, the first captured
+ownership contract wins. A value whose activation hook fails is not cached, but
+remains owned and is cleaned when its activation container is disposed.
 
 ## Modules, inspection, and controlled mutation
 
 ```ts
 container.load(
-  (registry) => registry.register(Config).register(Logger),
-  (registry) => registry.registerMulti(HOOK, { useClass: AuditHook }),
+  (registry) => {
+    registry
+      .register(Config, { inject: [], useClass: Config })
+      .register(Logger, { inject: [], useClass: Logger });
+  },
+  (registry) => {
+    registry.registerMulti(HOOK, { inject: [], useClass: AuditHook });
+  },
 );
 
 container.validate(Application);
@@ -225,23 +261,30 @@ Resolution path: UserController -> UserService -> UserRepository -> DATABASE
   decorator metadata, provider `inject`, or `static inject`.
 - Decorator dependency tuples are not inherited. A subclass with constructor
   dependencies must redeclare them; decorator scope metadata may be inherited.
-- Keep authored provider objects inline or use `satisfies Provider<T>`.
-  Annotating a variable as the broad storage type `Provider<T>` erases the
-  exact dependency tuple that TypeScript needs for declaration checks.
+- Keep dependency-bearing provider objects inline. For a reusable definition,
+  preserve its exact tuple with `FactoryProvider<T, typeof dependencies>` or
+  `ClassProvider<T, typeof dependencies>`; the broad `Provider<T>` storage type
+  cannot preserve an existential dependency tuple.
 - Parameter decorators and automatic class registration are intentionally not
   provided.
 - Promise-like values are not service values. Wrap a Promise in an object or
   use `useFactoryAsync`.
+- Synchronous activation, disposal, and module callbacks use block bodies with
+  no returned expression. Their `undefined` return contract prevents TypeScript's
+  `void` assignability rule from silently accepting an `async` function.
 - Dynamic provider resolution may target its activation container or an
   ancestor, not a sibling or descendant. This prevents lifetime and ownership
   leaks.
 - Circular proxies are not created; eager and immediate dynamic cycles fail
-  with a structured error. Use `lazy()` for an intentional deferred edge.
+  with a structured error. Use `lazy()` or an injected `Resolver` for an
+  intentional deferred edge.
 
 ## Project status
 
 The repository defines type, coverage, property, generated-graph, concurrency,
 packed-consumer, package-lint, public-API, size, and runtime-matrix checks.
+Its [agent harness](./docs/harness.md) keeps architecture, execution state,
+documentation links, and core repository invariants machine-readable.
 The exact [production maturity criteria](./docs/maturity.md),
 [migration guides](./docs/migrations.md), [security policy](./SECURITY.md),
 and [support policy](./docs/support.md) are public. Passing those gates is not a

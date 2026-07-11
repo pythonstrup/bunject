@@ -4,11 +4,14 @@ import {
   all,
   lazy,
   optional,
+  resolver,
   token,
   type ClassProvider,
   type InjectionToken,
-  type Provider,
   type Lazy,
+  type Provider,
+  type Resolver,
+  type Token,
 } from "../src/index";
 
 class Database {
@@ -191,6 +194,57 @@ container.register(DESCRIPTORS, {
   },
 });
 
+const ACTIVE_RESOLVER = token<Resolver>("ACTIVE_RESOLVER");
+container.register(ACTIVE_RESOLVER, {
+  inject: [resolver()],
+  useFactory: (activeResolver) => {
+    const resolved: Database = activeResolver.resolve(DATABASE);
+    const allCaches: readonly Cache[] = activeResolver.resolveAll(CACHE);
+    const pending: Promise<Database> = activeResolver.resolveAsync(DATABASE);
+    const pendingAll: Promise<readonly Cache[]> =
+      activeResolver.resolveAllAsync(CACHE);
+    void resolved;
+    void allCaches;
+    void pending;
+    void pendingAll;
+    // @ts-expect-error a Resolver cannot mutate its container
+    activeResolver.register(DATABASE, { useValue: new Database() });
+    return activeResolver;
+  },
+});
+
+@Injectable({ inject: [resolver()] })
+class ResolverConsumer {
+  constructor(readonly activeResolver: Resolver) {}
+}
+container.register(ResolverConsumer);
+
+class StaticResolverConsumer {
+  static readonly inject = [resolver()] as const;
+  constructor(readonly activeResolver: Resolver) {}
+}
+container.register(StaticResolverConsumer);
+
+declare const readonlyResolver: Resolver;
+declare const readonlyLazy: Lazy<Database>;
+// @ts-expect-error resolver handles are read-only
+readonlyResolver.resolve = () => new Database();
+// @ts-expect-error lazy handles are read-only
+readonlyLazy.resolve = () => new Database();
+
+container.register(ACTIVE_RESOLVER, {
+  inject: [resolver()],
+  // @ts-expect-error resolver dependencies must match the factory parameter
+  useFactory: (_activeResolver: Database) => ({}) as Resolver,
+});
+
+// @ts-expect-error typed resolver metadata must match the constructor
+@Injectable({ inject: [resolver()] })
+class WrongResolverConsumer {
+  constructor(_database: Database) {}
+}
+void WrongResolverConsumer;
+
 container.rebind(DATABASE, {
   useFactory: () => new Database(),
   onActivation: (value, context) => {
@@ -198,10 +252,54 @@ container.rebind(DATABASE, {
     const resolved: Database = context.container.resolve(context.token);
     void resolved;
   },
+  onDisposal: (value, context) => {
+    value.query();
+    const token: Token<Database> = context.token;
+    const owner: Container = context.container;
+    void token;
+    void owner;
+  },
+  onDisposalAsync: async (value, context) => {
+    value.query();
+    void context.container;
+  },
 });
 
 // @ts-expect-error activation receives the registered service type
 container.rebind(DATABASE, { useValue: new Database(), onActivation: () => {} });
+
+// @ts-expect-error borrowed values cannot own a disposal callback
+container.rebind(DATABASE, { useValue: new Database(), onDisposal: () => {} });
+
+// @ts-expect-error aliases cannot own a disposal callback
+container.register(DATABASE, {
+  useExisting: DATABASE,
+  onDisposal: () => {},
+});
+
+container.rebind(DATABASE, {
+  useFactory: () => new Database(),
+  // @ts-expect-error disposal receives the registered service type
+  onDisposal: (_value: Cache) => {},
+});
+
+container.rebind(DATABASE, {
+  useFactory: () => new Database(),
+  // @ts-expect-error async disposal must return a Promise-like value
+  onDisposalAsync: () => {},
+});
+
+container.rebind(DATABASE, {
+  useFactory: () => new Database(),
+  // @ts-expect-error synchronous disposal cannot return a Promise
+  onDisposal: async () => {},
+});
+
+container.rebind(DATABASE, {
+  useFactory: () => new Database(),
+  // @ts-expect-error activation must be synchronous
+  onActivation: async () => {},
+});
 
 container.load((registry) => {
   registry.registerMulti(CACHE, { useValue: new Cache() });
@@ -213,6 +311,9 @@ container.load((registry) => {
   // @ts-expect-error registration modules cannot escape to resolution APIs
   registry.resolve(CACHE);
 });
+
+// @ts-expect-error registration modules must be synchronous
+container.load(async () => {});
 
 // @ts-expect-error typed decorator dependencies must match the constructor
 @Injectable({ inject: [DATABASE] })

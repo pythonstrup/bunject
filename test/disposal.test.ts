@@ -45,7 +45,7 @@ describe("container disposal", () => {
     }
 
     const container = new Container();
-    container.register(ClassResource);
+    container.register(ClassResource, { inject: [], useClass: ClassResource });
     container.register(FACTORY, {
       scope: "transient",
       useFactory: () => ({
@@ -78,6 +78,7 @@ describe("container disposal", () => {
 
     const container = new Container();
     container.register(Resource, {
+      inject: [],
       scope: "singleton",
       useClass: Resource,
     });
@@ -318,6 +319,257 @@ describe("container disposal", () => {
     fallback.resolve(FALLBACK);
     await fallback.disposeAsync();
     expect(fallbackOrder).toEqual(["sync"]);
+  });
+
+  test("adapts frozen and primitive resources with typed disposal contexts", () => {
+    const CLIENT = token<{ close(): void }>("CLIENT");
+    const HANDLE = token<number>("HANDLE");
+    const closed: string[] = [];
+    const parent = new Container();
+    parent.register(CLIENT, {
+      scope: "scoped",
+      useFactory: () =>
+        Object.freeze({
+          close() {
+            closed.push("client");
+          },
+        }),
+      onDisposal: (client, context) => {
+        expect(Object.isFrozen(context)).toBe(true);
+        expect(context.container).toBe(child);
+        expect(context.token).toBe(CLIENT);
+        client.close();
+      },
+    });
+    parent.register(HANDLE, {
+      useFactory: () => 42,
+      onDisposal: (handle, context) => {
+        expect(handle).toBe(42);
+        expect(context.container).toBe(child);
+        expect(context.token).toBe(HANDLE);
+        closed.push("handle");
+      },
+    });
+    const child = parent.createScope();
+
+    child.resolve(CLIENT);
+    child.resolve(HANDLE);
+    child.dispose();
+
+    expect(closed).toEqual(["handle", "client"]);
+    parent.dispose();
+  });
+
+  test("treats explicit disposal callbacks as the authoritative contract", async () => {
+    const RESOURCE = token<Disposable & AsyncDisposable>("RESOURCE");
+    const events: string[] = [];
+    const createResource = () => ({
+      [Symbol.dispose]() {
+        events.push("symbol-sync");
+      },
+      async [Symbol.asyncDispose]() {
+        events.push("symbol-async");
+      },
+    });
+
+    const syncContainer = new Container();
+    syncContainer.register(RESOURCE, {
+      useFactory: createResource,
+      onDisposal: () => {
+        events.push("hook-sync");
+      },
+      onDisposalAsync: async () => {
+        events.push("hook-async");
+      },
+    });
+    syncContainer.resolve(RESOURCE);
+    syncContainer.dispose();
+
+    const asyncContainer = new Container();
+    asyncContainer.register(RESOURCE, {
+      useFactory: createResource,
+      onDisposal: () => {
+        events.push("fallback-sync");
+      },
+      onDisposalAsync: async () => {
+        events.push("hook-async");
+      },
+    });
+    asyncContainer.resolve(RESOURCE);
+    await asyncContainer.disposeAsync();
+
+    const fallbackContainer = new Container();
+    fallbackContainer.register(RESOURCE, {
+      useFactory: createResource,
+      onDisposal: () => {
+        events.push("fallback-sync");
+      },
+    });
+    fallbackContainer.resolve(RESOURCE);
+    await fallbackContainer.disposeAsync();
+
+    expect(events).toEqual(["hook-sync", "hook-async", "fallback-sync"]);
+  });
+
+  test("keeps sync disposal atomic for an async-only provider callback", async () => {
+    const RESOURCE = token<object>("RESOURCE");
+    let disposals = 0;
+    const container = new Container();
+    container.register(RESOURCE, {
+      useFactory: () => ({}),
+      onDisposalAsync: async () => {
+        disposals += 1;
+      },
+    });
+    container.resolve(RESOURCE);
+
+    expect(() => container.dispose()).toThrow(TypeError);
+    expect(container.disposed).toBe(false);
+    expect(disposals).toBe(0);
+
+    await container.disposeAsync();
+    expect(disposals).toBe(1);
+  });
+
+  test("keeps the first ownership contract for a shared identity", () => {
+    const FIRST = token<object>("FIRST");
+    const SECOND = token<object>("SECOND");
+    const resource = {};
+    const events: string[] = [];
+    const container = new Container();
+    container.register(FIRST, {
+      useFactory: () => resource,
+      onDisposal: () => {
+        events.push("first");
+      },
+    });
+    container.register(SECOND, {
+      useFactory: () => resource,
+      onDisposal: () => {
+        events.push("second");
+      },
+    });
+
+    container.resolve(FIRST);
+    container.resolve(SECOND);
+    container.dispose();
+
+    expect(events).toEqual(["first"]);
+  });
+
+  test("retains each rebound generation's disposal callback", () => {
+    const RESOURCE = token<object>("RESOURCE");
+    const events: string[] = [];
+    const container = new Container();
+    container.register(RESOURCE, {
+      scope: "singleton",
+      useFactory: () => ({}),
+      onDisposal: () => {
+        events.push("old");
+      },
+    });
+    container.resolve(RESOURCE);
+    container.rebind(RESOURCE, {
+      scope: "singleton",
+      useFactory: () => ({}),
+      onDisposal: () => {
+        events.push("new");
+      },
+    });
+    container.resolve(RESOURCE);
+
+    container.dispose();
+
+    expect(events).toEqual(["new", "old"]);
+  });
+
+  test("retains disposal callbacks for failed activations", () => {
+    const RESOURCE = token<{ readonly id: number }>("RESOURCE");
+    const disposed: number[] = [];
+    let created = 0;
+    const container = new Container();
+    container.register(RESOURCE, {
+      scope: "singleton",
+      useFactory: () => ({ id: ++created }),
+      onActivation: (value) => {
+        if (value.id === 1) throw new Error("activation failed");
+      },
+      onDisposal: (value) => {
+        disposed.push(value.id);
+      },
+    });
+
+    expect(() => container.resolve(RESOURCE)).toThrow(
+      expect.objectContaining({ code: "PROVIDER_FAILED" }),
+    );
+    expect(container.resolve(RESOURCE).id).toBe(2);
+    container.dispose();
+
+    expect(disposed).toEqual([2, 1]);
+  });
+
+  test("rejects a Promise returned by a synchronous disposal callback", () => {
+    const RESOURCE = token<object>("RESOURCE");
+    const container = new Container();
+    container.register(RESOURCE, {
+      useFactory: () => ({}),
+      onDisposal: (() => Promise.resolve()) as unknown as () => undefined,
+    });
+    container.resolve(RESOURCE);
+
+    expect(() => container.dispose()).toThrow(
+      expect.objectContaining({
+        errors: [expect.objectContaining({ message: "onDisposal must be synchronous." })],
+      }),
+    );
+    expect(container.disposed).toBe(true);
+  });
+
+  test("requires an async disposal callback to return a Promise-like value", async () => {
+    const RESOURCE = token<object>("RESOURCE");
+    const container = new Container();
+    container.register(RESOURCE, {
+      useFactory: () => ({}),
+      onDisposalAsync: (() => undefined) as unknown as () => Promise<void>,
+    });
+    container.resolve(RESOURCE);
+
+    await expect(container.disposeAsync()).rejects.toEqual(
+      expect.objectContaining({
+        errors: [
+          expect.objectContaining({
+            message: "onDisposalAsync must return a Promise-like value.",
+          }),
+        ],
+      }),
+    );
+    expect(container.disposed).toBe(true);
+  });
+
+  test("waits for a misdeclared sync callback before async disposal rejects", async () => {
+    const RESOURCE = token<object>("RESOURCE");
+    let finished = false;
+    const container = new Container();
+    container.register(RESOURCE, {
+      useFactory: () => ({}),
+      onDisposal: (async () => {
+        await Bun.sleep(1);
+        finished = true;
+      }) as unknown as () => undefined,
+    });
+    container.resolve(RESOURCE);
+
+    await expect(container.disposeAsync()).rejects.toEqual(
+      expect.objectContaining({
+        errors: [
+          expect.objectContaining({
+            message: "onDisposal must be synchronous.",
+          }),
+        ],
+      }),
+    );
+    expect(finished).toBe(true);
+    expect(container.disposed).toBe(true);
   });
 
   test("validates only the disposal method selected by the chosen mode", async () => {

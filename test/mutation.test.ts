@@ -567,7 +567,7 @@ describe("container mutation", () => {
     expect(order).toEqual([2, 1]);
   });
 
-  test("blocks mutation across the whole family and unlocks after rejection", async () => {
+  test("locks the active lookup branch while isolated branches stay mutable", async () => {
     const PENDING = token<object>("PENDING");
     const SIBLING_VALUE = token<number>("SIBLING_VALUE");
     const NESTED_VALUE = token<number>("NESTED_VALUE");
@@ -597,22 +597,17 @@ describe("container mutation", () => {
     const pending = child.resolveAsync(PENDING);
     await started;
 
-    for (const mutation of [
-      () => parent.rebind(PENDING, { useValue: {} }),
-      () => sibling.unregister(SIBLING_VALUE),
-      () => nested.rebind(NESTED_VALUE, { useValue: 2 }),
-    ]) {
-      expect(mutation).toThrow(
-        expect.objectContaining({ code: "CONTAINER_BUSY" }),
-      );
-    }
+    expect(() => parent.rebind(PENDING, { useValue: {} })).toThrow(
+      expect.objectContaining({ code: "CONTAINER_BUSY" }),
+    );
+    expect(sibling.unregister(SIBLING_VALUE)).toBe(true);
+    expect(nested.rebind(NESTED_VALUE, { useValue: 2 })).toBe(nested);
+    expect(nested.resolve(NESTED_VALUE)).toBe(2);
 
     release();
     await expect(pending).rejects.toMatchObject({ code: "PROVIDER_FAILED" });
 
     expect(parent.rebind(PENDING, { useValue: {} })).toBe(parent);
-    expect(sibling.unregister(SIBLING_VALUE)).toBe(true);
-    expect(nested.rebind(NESTED_VALUE, { useValue: 2 })).toBe(nested);
     expect(nested.resolve(NESTED_VALUE)).toBe(2);
   });
 

@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { Container, all, lazy, optional, token } from "../src/index";
+import {
+  Container,
+  all,
+  lazy,
+  optional,
+  token,
+  type RegistrationModule,
+} from "../src/index";
 
 describe("registration modules", () => {
   test("commits staged single and multi registrations atomically", () => {
@@ -65,6 +72,15 @@ describe("registration modules", () => {
       }),
     ).toThrow(expect.objectContaining({ code: "CONTAINER_BUSY" }));
     expect(container.has(VALUE)).toBe(false);
+  });
+
+  test("rejects asynchronous registration modules at runtime", () => {
+    const container = new Container();
+    const asyncModule = (async () => {}) as unknown as RegistrationModule;
+
+    expect(() => container.load(asyncModule)).toThrow(
+      expect.objectContaining({ code: "INVALID_MODULE" }),
+    );
   });
 });
 

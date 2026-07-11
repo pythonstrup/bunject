@@ -67,13 +67,21 @@ describe("Container", () => {
     expect(container.resolve(Overridden)).not.toBe(container.resolve(Overridden));
   });
 
-  test("self-registers an undecorated class as transient", () => {
+  test("requires an explicit empty tuple for an undecorated class", () => {
     class PlainService {}
     const container = new Container();
-    container.register(PlainService);
+    expect(() => container.register(PlainService)).toThrow(
+      expect.objectContaining({ code: "INVALID_PROVIDER" }),
+    );
+    container.register(PlainService, {
+      inject: [],
+      useClass: PlainService,
+    });
 
     expect(container.resolve(PlainService)).toBeInstanceOf(PlainService);
-    expect(container.resolve(PlainService)).not.toBe(container.resolve(PlainService));
+    expect(container.resolve(PlainService)).not.toBe(
+      container.resolve(PlainService),
+    );
   });
 
   test("keeps tokens with the same description distinct and preserves falsy values", () => {

@@ -23,17 +23,25 @@ Reference implementations:
 - [x] Standard decorators without reflect metadata or global registration
 - [x] Multi-binding and sync/async `resolveAll`
 - [x] Optional, all, and lifetime-safe lazy descriptors
+- [x] Read-only activation-scoped resolver for dynamic single/multi lookup
 - [x] Captive dependency validation for declared and dynamic graphs
 - [x] Sync/async graph separation and concurrent cache coalescing
 - [x] Preflight missing, ambiguity, async, lifetime, and cycle validation
 - [x] Full dynamic dependency paths, stable error codes, cycles, and causes
 - [x] Deterministic sync/async disposal, hierarchy, and ownership
+- [x] Explicit sync/async cleanup adapters for third-party resources
 - [x] Registration inspection, local override, and unregister
 
 Snapshot/restore is intentionally not a core parity item. Its cache and
 resource semantics differ across libraries, and child scopes plus fresh
 bootstrap containers provide safer test isolation without resurrecting or
 double-disposing instances.
+
+Selective binding/module unload is also not a 1.0 gate while `load()` remains
+an atomic composition API rather than a hot-reload lifecycle. It can be added
+compatibly when a concrete plugin use case exists; current mutation deliberately
+retires resources until container disposal instead of deactivating objects that
+callers may still hold.
 
 ## Mature library gate
 
@@ -43,6 +51,7 @@ double-disposing instances.
 - [x] InversifyJS, TSyringe, and Awilix migration guides
 - [x] Bun HTTP request-scope example
 - [x] Checked declaration hash, package lint, and versioned changelog gate
+- [x] Agent map, architecture record, execution plan, and knowledge-link harness
 
 ## Engineering gates
 
@@ -58,6 +67,7 @@ double-disposing instances.
 - [x] Peer benchmark harness and compressed-size release budgets
 - [x] Zero runtime dependencies and allowlisted package payload
 - [x] MIT license, changelog, security policy, and support policy
+- [x] Repository invariants and local inline documentation targets checked mechanically
 - [x] Deno 2 compatibility job configured
 - [x] Local Deno 2.8.1 runtime smoke
 - [x] OIDC provenance release workflow configured
@@ -67,7 +77,8 @@ double-disposing instances.
 `api/index.d.ts.sha256` deliberately makes any exported declaration change a
 review event; the maintainer must assess its SemVer impact, update the
 changelog, and then refresh the hash. A release additionally requires a
-`v<package version>` tag and a dated changelog heading.
+`v<package version>` tag and a dated changelog heading. Prerelease versions are
+blocked until the project adopts an explicit non-`latest` npm dist-tag policy.
 
 CI configuration is repository evidence only after it has run on the eventual
 remote. The provenance workflow also needs the final repository URL in package

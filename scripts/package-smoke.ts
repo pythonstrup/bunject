@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -6,6 +6,10 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryDirectory = await mkdtemp(join(tmpdir(), "bunject-package-smoke-"));
 const consumerDirectory = join(temporaryDirectory, "consumer");
+const { version } = JSON.parse(
+  await readFile(join(root, "package.json"), "utf8"),
+) as { version: string };
+const archiveName = `bunject-${version}.tgz`;
 
 async function run(command: string[], cwd: string): Promise<void> {
   const child = Bun.spawn(command, {
@@ -14,6 +18,7 @@ async function run(command: string[], cwd: string): Promise<void> {
       ...Bun.env,
       BUN_INSTALL_CACHE_DIR: join(temporaryDirectory, "cache"),
       NO_COLOR: "1",
+      npm_config_cache: join(temporaryDirectory, "npm-cache"),
       TMPDIR: temporaryDirectory,
     },
     stdout: "pipe",
@@ -33,14 +38,7 @@ async function run(command: string[], cwd: string): Promise<void> {
 
 try {
   await run(
-    [
-      "bun",
-      "pm",
-      "pack",
-      "--filename",
-      join(temporaryDirectory, "bunject.tgz"),
-      "--quiet",
-    ],
+    ["npm", "pack", "--pack-destination", temporaryDirectory, "--silent"],
     root,
   );
   await mkdir(consumerDirectory);
@@ -50,7 +48,7 @@ try {
       {
         private: true,
         type: "module",
-        dependencies: { bunject: "file:../bunject.tgz" },
+        dependencies: { bunject: `file:../${archiveName}` },
       },
       null,
       2,
@@ -116,7 +114,10 @@ if (container.resolve(Application).value !== 42) {
     )}\n`,
   );
 
-  await run(["bun", "install", "--silent"], consumerDirectory);
+  await run(
+    ["npm", "install", "--silent", "--ignore-scripts", "--no-audit", "--no-fund"],
+    consumerDirectory,
+  );
   await run(
     ["bun", join(root, "node_modules/typescript/bin/tsc"), "-p", "tsconfig.json"],
     consumerDirectory,
@@ -124,7 +125,9 @@ if (container.resolve(Application).value !== 42) {
   await run(["bun", "run", "bun-consumer.ts"], consumerDirectory);
   await run(["node", "out/bun-consumer.js"], consumerDirectory);
   await run(["node", "node-consumer.mjs"], consumerDirectory);
-  console.log("Package smoke test passed in Bun, emitted decorators, and Node.");
+  console.log(
+    "npm-packed consumer smoke passed in Bun, emitted decorators, and Node.",
+  );
 } finally {
   await rm(temporaryDirectory, { recursive: true, force: true });
 }

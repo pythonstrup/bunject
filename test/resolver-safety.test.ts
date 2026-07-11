@@ -309,7 +309,7 @@ describe("resolver safety", () => {
       const PromiseConstructor = function () {
         return Promise.reject(cause);
       } as unknown as new () => object;
-      container.register(CLASS, { useClass: PromiseConstructor });
+      container.register(CLASS, { inject: [], useClass: PromiseConstructor });
 
       expect(() => container.resolve(FACTORY)).toThrow(
         expect.objectContaining({ code: "ASYNC_IN_SYNC" }),
@@ -328,5 +328,30 @@ describe("resolver safety", () => {
     } finally {
       process.off("unhandledRejection", onUnhandledRejection);
     }
+  });
+
+  test("wraps thenable inspection failures at provider boundaries", async () => {
+    const VALUE = token<object>("VALUE");
+    const cause = new Error("then getter exploded");
+    const result = {
+      get then(): never {
+        throw cause;
+      },
+    };
+    const sync = new Container();
+    sync.register(VALUE, { useFactory: () => result });
+    expect(() => sync.resolve(VALUE)).toThrow(
+      expect.objectContaining({ code: "PROVIDER_FAILED", cause }),
+    );
+
+    const async = new Container();
+    async.register(VALUE, { useFactory: () => result });
+    await expect(async.resolveAsync(VALUE)).rejects.toEqual(
+      expect.objectContaining({ code: "PROVIDER_FAILED", cause }),
+    );
+
+    expect(() =>
+      new Container().register(VALUE, { useValue: result }),
+    ).toThrow(expect.objectContaining({ code: "INVALID_PROVIDER", cause }));
   });
 });

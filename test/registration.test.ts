@@ -44,6 +44,22 @@ describe("registration validation", () => {
         code: "INVALID_PROVIDER",
         register: (container) =>
           (container as any).register(TOKEN, {
+            useValue: 1,
+            onDisposal: () => {},
+          }),
+      },
+      {
+        code: "INVALID_PROVIDER",
+        register: (container) =>
+          (container as any).register(TOKEN, {
+            useExisting: TOKEN,
+            onDisposalAsync: async () => {},
+          }),
+      },
+      {
+        code: "INVALID_PROVIDER",
+        register: (container) =>
+          (container as any).register(TOKEN, {
             inject: "not-an-array",
             useFactory: () => 1,
           }),
@@ -70,6 +86,22 @@ describe("registration validation", () => {
         code: "INVALID_PROVIDER",
         register: (container) =>
           (container as any).register(TOKEN, { useFactoryAsync: 1 }),
+      },
+      {
+        code: "INVALID_PROVIDER",
+        register: (container) =>
+          (container as any).register(TOKEN, {
+            useFactory: () => 1,
+            onDisposal: 1,
+          }),
+      },
+      {
+        code: "INVALID_PROVIDER",
+        register: (container) =>
+          (container as any).register(TOKEN, {
+            useFactory: () => 1,
+            onDisposalAsync: 1,
+          }),
       },
       {
         code: "INVALID_PROVIDER",
@@ -130,6 +162,24 @@ describe("registration validation", () => {
     expect(() =>
       container.register(VALUE, { useClass: MissingDeclaration }),
     ).toThrow(expect.objectContaining({ code: "INVALID_PROVIDER" }));
+
+    class HiddenByDefault {
+      constructor(
+        readonly optional = 1,
+        readonly required: object,
+      ) {}
+    }
+    class HiddenByRest {
+      constructor(..._values: [object]) {}
+    }
+    expect(HiddenByDefault.length).toBe(0);
+    expect(HiddenByRest.length).toBe(0);
+    expect(() => container.register(HiddenByDefault)).toThrow(
+      expect.objectContaining({ code: "INVALID_PROVIDER" }),
+    );
+    expect(() => container.register(HiddenByRest)).toThrow(
+      expect.objectContaining({ code: "INVALID_PROVIDER" }),
+    );
   });
 
   test("does not apply a base decorator tuple to a changed constructor", () => {
@@ -159,7 +209,7 @@ describe("registration validation", () => {
     ).not.toThrow();
   });
 
-  test("freezes a container family while async resolution is active", async () => {
+  test("locks only containers visible to an active async graph", async () => {
     const VALUE = token<object>("VALUE");
     const OTHER = token<object>("OTHER");
     const parent = new Container();
@@ -179,9 +229,9 @@ describe("registration validation", () => {
     expect(() => child.register(OTHER, { useValue: {} })).toThrow(
       expect.objectContaining({ code: "CONTAINER_BUSY" }),
     );
-    expect(() => parent.createScope()).toThrow(
-      expect.objectContaining({ code: "CONTAINER_BUSY" }),
-    );
+    const sibling = parent.createScope();
+    expect(sibling.register(OTHER, { useValue: {} })).toBe(sibling);
+    expect(sibling.resolve(OTHER)).toBeDefined();
 
     await pending;
     expect(parent.register(OTHER, { useValue: {} })).toBe(parent);
