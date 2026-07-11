@@ -1,5 +1,13 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
@@ -36,6 +44,46 @@ async function run(command: string[], cwd: string): Promise<void> {
   }
 }
 
+async function assertPackedMarkdownLinks(): Promise<void> {
+  const packageRoot = join(consumerDirectory, "node_modules", "bunject");
+  const markdownFiles: string[] = [];
+  const collect = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) await collect(path);
+      else if (entry.name.endsWith(".md")) markdownFiles.push(path);
+    }
+  };
+  await collect(packageRoot);
+
+  const markdownLink = /\[[^\]]*\]\(([^)]+)\)/g;
+  for (const file of markdownFiles) {
+    const markdown = await readFile(file, "utf8");
+    for (const match of markdown.matchAll(markdownLink)) {
+      const target = match[1]!.trim().split("#", 1)[0]!;
+      if (!target || /^[A-Za-z][A-Za-z+.-]*:/.test(target)) continue;
+      const destination = resolve(dirname(file), decodeURIComponent(target));
+      const packagePath = relative(packageRoot, destination);
+      if (
+        packagePath === ".." ||
+        packagePath.startsWith(`..${sep}`) ||
+        isAbsolute(packagePath)
+      ) {
+        throw new Error(
+          `${relative(packageRoot, file)} links outside the package: ${target}`,
+        );
+      }
+      try {
+        await access(destination);
+      } catch {
+        throw new Error(
+          `${relative(packageRoot, file)} has a broken local link: ${target}`,
+        );
+      }
+    }
+  }
+}
+
 try {
   await run(
     ["npm", "pack", "--pack-destination", temporaryDirectory, "--silent"],
@@ -56,9 +104,10 @@ try {
   );
   await writeFile(
     join(consumerDirectory, "bun-consumer.ts"),
-    `import { Container, Injectable, token } from "bunject";
+    `import { Container, Injectable, defineProvider, token } from "bunject";
 
 const VALUE = token<number>("VALUE");
+const DOUBLE = token<number>("DOUBLE");
 
 @Injectable({ scope: "singleton" })
 class Application {
@@ -68,9 +117,17 @@ class Application {
 
 const container = new Container();
 container.register(VALUE, { useValue: 42 });
+container.register(DOUBLE, defineProvider<number>()({
+  inject: [VALUE],
+  useFactory: (value) => value * 2,
+}));
 container.register(Application);
 const first = container.resolve(Application);
-if (first.value !== 42 || first !== container.resolve(Application)) {
+if (
+  first.value !== 42 ||
+  first !== container.resolve(Application) ||
+  container.resolve(DOUBLE) !== 84
+) {
   throw new Error("Bun package consumer smoke test failed");
 }
 `,
@@ -116,6 +173,17 @@ if (container.resolve(Application).value !== 42) {
 
   await run(
     ["npm", "install", "--silent", "--ignore-scripts", "--no-audit", "--no-fund"],
+    consumerDirectory,
+  );
+  await assertPackedMarkdownLinks();
+  await run(
+    [
+      "bun",
+      join(root, "node_modules/typescript-5-4/bin/tsc"),
+      "--noEmit",
+      "-p",
+      "tsconfig.json",
+    ],
     consumerDirectory,
   );
   await run(

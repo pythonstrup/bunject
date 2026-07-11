@@ -19,11 +19,13 @@ Reference implementations:
 - [x] Class, value, sync factory, async factory, and alias providers
 - [x] Singleton, scoped, resolution, and transient lifetimes
 - [x] Nested child containers with owner-safe singleton behavior
-- [x] Typed class/symbol tokens and checked dependency tuples
+- [x] Typed class/symbol tokens, checked dependency tuples, and reusable
+  `defineProvider()` definitions
 - [x] Standard decorators without reflect metadata or global registration
 - [x] Multi-binding and sync/async `resolveAll`
 - [x] Optional, all, and lifetime-safe lazy descriptors
-- [x] Read-only activation-scoped resolver for dynamic single/multi lookup
+- [x] Read-only activation-scoped resolver for availability and dynamic
+  single/multi lookup
 - [x] Captive dependency validation for declared and dynamic graphs
 - [x] Sync/async graph separation and concurrent cache coalescing
 - [x] Preflight missing, ambiguity, async, lifetime, and cycle validation
@@ -52,26 +54,31 @@ callers may still hold.
 - [x] Bun HTTP request-scope example
 - [x] Checked declaration hash, package lint, and versioned changelog gate
 - [x] Agent map, architecture record, execution plan, and knowledge-link harness
+- [x] Shipped public API reference and declaration-level documentation
 
 ## Engineering gates
 
 - [x] Runtime, negative-path, type, generated-graph, and concurrency tests
 - [x] Shrinking property tests with deterministic replay and model oracles
 - [x] 95% line/function/statement coverage threshold
-- [x] Minimum TypeScript 5.4 and current TypeScript checks
+- [x] Pinned TypeScript 5.4 and current TypeScript source and packed-consumer checks
 - [x] Minimum Bun 1.3.10 and latest Bun jobs
-- [x] Packed tarball install plus isolated NodeNext, Bun, and declaration smoke
+- [x] Packed tarball install plus isolated NodeNext, Bun, Node, declaration,
+  and packaged-document link smoke
 - [x] Node 22/24/26 runtime matrix configured
+- [x] Windows packed-consumer job configured
 - [x] Package lint and exported-type compatibility checks
 - [x] Scope/disposal ownership and scheduler stress coverage
-- [x] Peer benchmark harness and compressed-size release budgets
+- [x] Peer benchmark policy, representative graph/scope cases, and compressed-size
+  release budgets
+- [x] Clean cross-platform build output without stale or unshipped declaration maps
 - [x] Zero runtime dependencies and allowlisted package payload
 - [x] MIT license, changelog, security policy, and support policy
 - [x] Repository invariants and local inline documentation targets checked mechanically
 - [x] Deno 2 compatibility job configured
 - [x] Local Deno 2.8.1 runtime smoke
-- [x] OIDC provenance release workflow configured
-- [ ] Deno 2 and runtime-matrix jobs passed on the eventual remote
+- [x] OIDC provenance release workflow gated by the full compatibility matrix
+- [ ] Deno 2, Windows, and runtime-matrix jobs passed on the eventual remote
 - [ ] npm trusted publisher, repository metadata, and provenance release verified
 
 `api/index.d.ts.sha256` deliberately makes any exported declaration change a

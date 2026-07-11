@@ -2,9 +2,11 @@
 
 ## Purpose
 
-Bunject is a Bun-first, runtime-neutral dependency injection kernel for standard
-TypeScript decorators. It favors explicit typed graphs over emitted reflection,
-global registration, parameter decorators, or framework-specific discovery.
+Bunject is a Bun-first, Node/Deno-compatible dependency injection kernel for
+standard TypeScript decorators. It favors explicit typed graphs over emitted
+reflection, global registration, parameter decorators, or framework-specific
+discovery. Browser and non-Node-compatible edge runtimes are not targets because
+the kernel uses `node:async_hooks` for concurrent resolution context.
 
 The implementation intentionally lives in [one kernel](./src/index.ts). Split it
 only when navigation or independent ownership becomes measurably worse; file

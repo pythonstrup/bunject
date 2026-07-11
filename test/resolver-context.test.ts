@@ -53,6 +53,52 @@ describe("resolver dependency", () => {
     expect(child.resolve(SINGLETON_FACTORY)()).toBe("parent");
   });
 
+  test("queries visible registrations and tracks immediate availability", () => {
+    const INHERITED = token<number>("INHERITED");
+    const OPTIONAL = token<number>("OPTIONAL");
+    const SNAPSHOT = token<{ readonly available: boolean }>("SNAPSHOT");
+    const DEFERRED = token<() => boolean>("DEFERRED");
+    const ACTIVE_RESOLVER = token<Resolver>("ACTIVE_RESOLVER");
+    const parent = new Container();
+    parent.register(INHERITED, { useValue: 1 });
+    parent.register(SNAPSHOT, {
+      inject: [resolver()],
+      scope: "scoped",
+      useFactory: (activeResolver) => ({
+        available: activeResolver.has(OPTIONAL),
+      }),
+    });
+    parent.register(DEFERRED, {
+      inject: [resolver()],
+      scope: "scoped",
+      useFactory: (activeResolver) => () => activeResolver.has(OPTIONAL),
+    });
+    parent.register(ACTIVE_RESOLVER, {
+      inject: [resolver()],
+      scope: "scoped",
+      useFactory: (activeResolver) => activeResolver,
+    });
+    const child = parent.createScope();
+
+    const firstSnapshot = child.resolve(SNAPSHOT);
+    const deferred = child.resolve(DEFERRED);
+    expect(firstSnapshot.available).toBe(false);
+    expect(deferred()).toBe(false);
+    expect(child.resolve(DEFERRED)).toBe(deferred);
+    expect(child.resolve(SNAPSHOT)).toBe(firstSnapshot);
+
+    child.register(OPTIONAL, { useValue: 2 });
+
+    expect(child.resolve(SNAPSHOT)).not.toBe(firstSnapshot);
+    expect(child.resolve(SNAPSHOT).available).toBe(true);
+    expect(child.resolve(DEFERRED)).toBe(deferred);
+    expect(deferred()).toBe(true);
+    const activeResolver = child.resolve(ACTIVE_RESOLVER);
+    expect(activeResolver.has(INHERITED)).toBe(true);
+    expect(activeResolver.has(INHERITED, { own: true })).toBe(false);
+    expect(activeResolver.has(OPTIONAL, { own: true })).toBe(true);
+  });
+
   test("preserves immediate paths, cycles, and the sync/async boundary", async () => {
     const MISSING = token<object>("MISSING");
     const MISSING_ROOT = token<object>("MISSING_ROOT");
@@ -202,6 +248,9 @@ describe("resolver dependency", () => {
       expect.objectContaining({ code: "DISPOSED" }),
     );
     expect(() => holder.resolveAll(VALUE)).toThrow(
+      expect.objectContaining({ code: "DISPOSED" }),
+    );
+    expect(() => holder.has(VALUE)).toThrow(
       expect.objectContaining({ code: "DISPOSED" }),
     );
     await expect(holder.resolveAsync(VALUE)).rejects.toMatchObject({

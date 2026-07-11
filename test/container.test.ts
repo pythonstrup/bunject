@@ -3,11 +3,28 @@ import {
   Container,
   ResolutionError,
   Injectable,
+  defineProvider,
   token,
   type Token,
 } from "../src/index";
 
 describe("Container", () => {
+  test("reuses a defined provider without wrapping it", () => {
+    const VALUE = token<number>("VALUE");
+    const DOUBLE = token<number>("DOUBLE");
+    const raw = {
+      inject: [VALUE] as const,
+      useFactory: (value: number) => value * 2,
+    };
+    const provider = defineProvider<number>()(raw);
+    const container = new Container();
+    container.register(VALUE, { useValue: 21 });
+    container.register(DOUBLE, provider);
+
+    expect(provider === raw).toBe(true);
+    expect(container.resolve(DOUBLE)).toBe(42);
+  });
+
   test("injects class, value, and factory providers", () => {
     class Database {
       readonly name = "main";

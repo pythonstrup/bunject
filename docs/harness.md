@@ -18,8 +18,9 @@ signals are:
 
 - focused deterministic tests for a reported behavior;
 - property and randomized stress tests for graph/scheduler behavior;
-- current and minimum TypeScript negative fixtures;
-- npm-packed Bun/Node and Deno compatibility consumers;
+- current and pinned minimum TypeScript negative fixtures;
+- npm-packed TypeScript 5.4/current, Bun, and Node consumers, packaged-document
+  link validation, and a built self-package Deno compatibility smoke;
 - package-lint, public declaration hash, and compressed-size gates;
 - peer benchmarks for performance evidence;
 - `harness:check` for repository maps, links, and design invariants.
@@ -39,7 +40,9 @@ Documentation drift is a test failure. `scripts/harness-check.ts` verifies the
 required map, active-plan shape, local inline Markdown file targets, the full
 merge-gate composition, zero runtime dependencies, side-effect-free package
 metadata, standard-decorator compiler settings, and banned reflection imports
-across the source tree.
+across the source tree. It also requires the CI and release workflows, their
+supported-runtime jobs, and the compatibility-gated OIDC provenance publish
+contract.
 
 ## Change loop
 

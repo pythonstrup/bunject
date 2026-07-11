@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 declare const injectionTokenType: unique symbol;
+declare const definedProviderType: unique symbol;
 const dependencyDescriptorType = Symbol("bunject.dependency");
 
 export type Scope = "singleton" | "scoped" | "resolution" | "transient";
@@ -50,7 +51,12 @@ export interface Lazy<T> {
   readonly resolveAsync: () => Promise<T>;
 }
 
+/** Read-only access to the provider's activation container. */
 export interface Resolver {
+  readonly has: <T>(
+    token: Token<T>,
+    options?: RegistrationQueryOptions,
+  ) => boolean;
   readonly resolve: <T>(token: Token<T>) => T;
   readonly resolveAsync: <T>(token: Token<T>) => Promise<T>;
   readonly resolveAll: <T>(token: Token<T>) => readonly T[];
@@ -212,6 +218,7 @@ export interface DependencyGraph {
 }
 
 export interface RegistrationRegistry {
+  /** Adds one staged single binding and returns this registry. */
   register<const TClass extends InjectableClass<any>>(
     service: TClass & StaticInjectMatchesConstructor<NoInfer<TClass>>,
   ): this;
@@ -242,11 +249,13 @@ export interface RegistrationRegistry {
     token: Token<T>,
     provider: AsyncFactoryProvider<NoInfer<T>, TDependencies>,
   ): this;
+  register<T>(token: Token<T>, provider: DefinedProvider<NoInfer<T>>): this;
   register<T, const TProvider extends Provider<NoInfer<T>>>(
     token: Token<T>,
     provider: TProvider & ProviderMatchesDeclaration<NoInfer<TProvider>>,
   ): this;
 
+  /** Appends one local multi-binding in registration order. */
   registerMulti<T, const TClass extends InjectableClass<NonPromise<T>>>(
     token: Token<T>,
     provider: MetadataClassProvider<NoInfer<T>, TClass>,
@@ -274,12 +283,17 @@ export interface RegistrationRegistry {
     token: Token<T>,
     provider: AsyncFactoryProvider<NoInfer<T>, TDependencies>,
   ): this;
+  registerMulti<T>(
+    token: Token<T>,
+    provider: DefinedProvider<NoInfer<T>>,
+  ): this;
   registerMulti<T, const TProvider extends Provider<NoInfer<T>>>(
     token: Token<T>,
     provider: TProvider & ProviderMatchesDeclaration<NoInfer<TProvider>>,
   ): this;
 }
 
+/** A synchronous, atomically staged group of registrations. */
 export type RegistrationModule = (
   registry: RegistrationRegistry,
 ) => undefined;
@@ -385,6 +399,46 @@ export type Provider<T> =
   | AsyncFactoryProvider<T>
   | ExistingProvider<T>;
 
+/** An opaque, dependency-checked provider definition safe to store and reuse. */
+export interface DefinedProvider<T> {
+  readonly [definedProviderType]: (value: T) => T;
+}
+
+type DependencyTuple =
+  | readonly []
+  | readonly [Dependency<any>, ...Dependency<any>[]];
+
+type ProviderWithInject<
+  TProvider,
+  TDependencies extends DependencyTuple,
+> = TProvider & { readonly inject: TDependencies };
+
+type Defined<TProvider, T> = TProvider & DefinedProvider<T>;
+
+interface ProviderBuilder<T> {
+  <const TDependencies extends DependencyTuple>(
+    provider: ProviderWithInject<ClassProvider<T, TDependencies>, TDependencies>,
+  ): Defined<
+    ProviderWithInject<ClassProvider<T, TDependencies>, TDependencies>,
+    T
+  >;
+  <const TDependencies extends DependencyTuple>(
+    provider: ProviderWithInject<FactoryProvider<T, TDependencies>, TDependencies>,
+  ): Defined<
+    ProviderWithInject<FactoryProvider<T, TDependencies>, TDependencies>,
+    T
+  >;
+  <const TDependencies extends DependencyTuple>(
+    provider: ProviderWithInject<
+      AsyncFactoryProvider<T, TDependencies>,
+      TDependencies
+    >,
+  ): Defined<
+    ProviderWithInject<AsyncFactoryProvider<T, TDependencies>, TDependencies>,
+    T
+  >;
+}
+
 export type ResolutionErrorCode =
   | "NOT_FOUND"
   | "MULTIPLE_PROVIDERS"
@@ -414,6 +468,7 @@ type AnyProvider =
   | FactoryProvider<any, readonly AnyDependency[]>
   | AsyncFactoryProvider<any, readonly AnyDependency[]>
   | ExistingProvider<any>;
+type AnyProviderInput = AnyProvider | DefinedProvider<any>;
 
 type NormalizedProvider =
   | {
@@ -561,10 +616,12 @@ interface ResolutionContext {
 const resolutionContext = new AsyncLocalStorage<ResolutionContext>();
 const disposalContext = new AsyncLocalStorage<DisposalExecutionContext>();
 
+/** Creates a unique symbol token carrying service type `T`. */
 export function token<T>(description: string): InjectionToken<T> {
   return Symbol(description) as InjectionToken<T>;
 }
 
+/** Declares an optional dependency that yields `undefined` only when absent. */
 export function optional<T>(target: Token<T>): OptionalDependency<T> {
   assertToken(target);
   return Object.freeze({
@@ -573,6 +630,7 @@ export function optional<T>(target: Token<T>): OptionalDependency<T> {
   });
 }
 
+/** Declares all bindings in the nearest visible binding set. */
 export function all<T>(target: Token<T>): AllDependency<T> {
   assertToken(target);
   return Object.freeze({
@@ -581,6 +639,7 @@ export function all<T>(target: Token<T>): AllDependency<T> {
   });
 }
 
+/** Declares a dependency whose target lookup and construction are deferred. */
 export function lazy<T>(target: Token<T>): LazyDependency<T> {
   assertToken(target);
   return Object.freeze({
@@ -589,12 +648,56 @@ export function lazy<T>(target: Token<T>): LazyDependency<T> {
   });
 }
 
+/** Injects a read-only resolver bound to the provider's activation container. */
 export function resolver(): ResolverDependency {
   return Object.freeze({
     [dependencyDescriptorType]: "resolver" as const,
   });
 }
 
+/**
+ * Type-checks a dependency-bearing provider while preserving its exact tuple
+ * for later storage and registration. Call `defineProvider<T>()` to declare an
+ * interface or other service type explicitly.
+ */
+export function defineProvider<
+  T,
+  const TDependencies extends DependencyTuple,
+>(
+  provider: ProviderWithInject<ClassProvider<T, TDependencies>, TDependencies>,
+): Defined<
+  ProviderWithInject<ClassProvider<T, TDependencies>, TDependencies>,
+  T
+>;
+export function defineProvider<
+  T,
+  const TDependencies extends DependencyTuple,
+>(
+  provider: ProviderWithInject<FactoryProvider<T, TDependencies>, TDependencies>,
+): Defined<
+  ProviderWithInject<FactoryProvider<T, TDependencies>, TDependencies>,
+  T
+>;
+export function defineProvider<
+  T,
+  const TDependencies extends DependencyTuple,
+>(
+  provider: ProviderWithInject<
+    AsyncFactoryProvider<T, TDependencies>,
+    TDependencies
+  >,
+): Defined<
+  ProviderWithInject<AsyncFactoryProvider<T, TDependencies>, TDependencies>,
+  T
+>;
+export function defineProvider<T>(): ProviderBuilder<T>;
+export function defineProvider(provider?: unknown): unknown {
+  return arguments.length === 0
+    ? (definition: unknown) => definition
+    : provider;
+}
+
+/** Stores standard-decorator injection metadata without registering globally. */
 export function Injectable<
   const TDependencies extends readonly Dependency<any>[],
 >(
@@ -634,6 +737,7 @@ export function Injectable(
   };
 }
 
+/** Structured resolution failure with a stable code and dependency path. */
 export class ResolutionError extends Error {
   readonly code: ResolutionErrorCode;
   readonly path: readonly AnyToken[];
@@ -654,6 +758,7 @@ export class ResolutionError extends Error {
   }
 }
 
+/** Structured registration failure with a stable code and optional token. */
 export class RegistrationError extends TypeError {
   readonly code: RegistrationErrorCode;
   readonly token: AnyToken | undefined;
@@ -671,6 +776,7 @@ export class RegistrationError extends TypeError {
   }
 }
 
+/** An isolated registration, resolution, scope, and resource-ownership domain. */
 export class Container implements Disposable, AsyncDisposable {
   readonly #registrations = new Map<AnyToken, BindingSet>();
   readonly #singletonCache = new Map<Registration, CacheEntry>();
@@ -691,6 +797,7 @@ export class Container implements Disposable, AsyncDisposable {
   #disposalOperation: DisposalOperation | undefined;
   #syncDisposalOperation: SyncDisposalOperation | undefined;
 
+  /** Adds one local single binding and returns this container. */
   register<const TClass extends InjectableClass<any>>(
     service: TClass & StaticInjectMatchesConstructor<NoInfer<TClass>>,
   ): this;
@@ -721,11 +828,12 @@ export class Container implements Disposable, AsyncDisposable {
     token: Token<T>,
     provider: AsyncFactoryProvider<NoInfer<T>, TDependencies>,
   ): this;
+  register<T>(token: Token<T>, provider: DefinedProvider<NoInfer<T>>): this;
   register<T, const TProvider extends Provider<NoInfer<T>>>(
     token: Token<T>,
     provider: TProvider & ProviderMatchesDeclaration<NoInfer<TProvider>>,
   ): this;
-  register(token: AnyToken, provider?: AnyProvider): this {
+  register(token: AnyToken, provider?: AnyProviderInput): this {
     this.#assertMutable("register providers", token);
     assertToken(token);
 
@@ -746,6 +854,7 @@ export class Container implements Disposable, AsyncDisposable {
     });
   }
 
+  /** Appends one local multi-binding in registration order. */
   registerMulti<T, const TClass extends InjectableClass<NonPromise<T>>>(
     token: Token<T>,
     provider: MetadataClassProvider<NoInfer<T>, TClass>,
@@ -773,11 +882,15 @@ export class Container implements Disposable, AsyncDisposable {
     token: Token<T>,
     provider: AsyncFactoryProvider<NoInfer<T>, TDependencies>,
   ): this;
+  registerMulti<T>(
+    token: Token<T>,
+    provider: DefinedProvider<NoInfer<T>>,
+  ): this;
   registerMulti<T, const TProvider extends Provider<NoInfer<T>>>(
     token: Token<T>,
     provider: TProvider & ProviderMatchesDeclaration<NoInfer<TProvider>>,
   ): this;
-  registerMulti(token: AnyToken, provider: AnyProvider): this {
+  registerMulti(token: AnyToken, provider: AnyProviderInput): this {
     this.#assertMutable("register providers", token);
     assertToken(token);
     return this.#runMutation(() =>
@@ -785,6 +898,7 @@ export class Container implements Disposable, AsyncDisposable {
     );
   }
 
+  /** Replaces an existing local binding set with one single binding. */
   rebind<const TClass extends InjectableClass<any>>(
     service: TClass & StaticInjectMatchesConstructor<NoInfer<TClass>>,
   ): this;
@@ -815,11 +929,12 @@ export class Container implements Disposable, AsyncDisposable {
     token: Token<T>,
     provider: AsyncFactoryProvider<NoInfer<T>, TDependencies>,
   ): this;
+  rebind<T>(token: Token<T>, provider: DefinedProvider<NoInfer<T>>): this;
   rebind<T, const TProvider extends Provider<NoInfer<T>>>(
     token: Token<T>,
     provider: TProvider & ProviderMatchesDeclaration<NoInfer<TProvider>>,
   ): this;
-  rebind(token: AnyToken, provider?: AnyProvider): this {
+  rebind(token: AnyToken, provider?: AnyProviderInput): this {
     this.#assertMutable("rebind providers", token);
     assertToken(token);
     if (!this.#registrations.has(token)) {
@@ -857,6 +972,7 @@ export class Container implements Disposable, AsyncDisposable {
     });
   }
 
+  /** Removes the complete local binding set and reports whether it existed. */
   unregister<T>(token: Token<T>): boolean {
     this.#assertMutable("unregister providers", token);
     assertToken(token);
@@ -867,6 +983,7 @@ export class Container implements Disposable, AsyncDisposable {
     });
   }
 
+  /** Atomically stages and commits synchronous registration modules. */
   load(...modules: readonly RegistrationModule[]): this {
     this.#assertMutable("load modules");
     for (const module of modules) {
@@ -962,6 +1079,7 @@ export class Container implements Disposable, AsyncDisposable {
     });
   }
 
+  /** Creates a child container inheriting this container's registrations. */
   createScope(): Container {
     this.#assertMutable("create a scope", undefined, true);
     return this.#runMutation(() => {
@@ -973,6 +1091,7 @@ export class Container implements Disposable, AsyncDisposable {
     });
   }
 
+  /** Resolves one provider synchronously after full graph preflight. */
   resolve<T>(token: Token<T>): T {
     return this.#resolvePublicSync(token);
   }
@@ -1012,6 +1131,7 @@ export class Container implements Disposable, AsyncDisposable {
     }
   }
 
+  /** Resolves one sync or async provider and coalesces cached construction. */
   resolveAsync<T>(token: Token<T>): Promise<T> {
     return this.#resolvePublicAsync(token);
   }
@@ -1069,6 +1189,7 @@ export class Container implements Disposable, AsyncDisposable {
     }
   }
 
+  /** Resolves the nearest complete binding set synchronously. */
   resolveAll<T>(token: Token<T>): readonly T[] {
     return this.#resolveAllPublicSync(token);
   }
@@ -1113,6 +1234,7 @@ export class Container implements Disposable, AsyncDisposable {
     }
   }
 
+  /** Resolves the nearest complete binding set asynchronously. */
   resolveAllAsync<T>(token: Token<T>): Promise<readonly T[]> {
     return this.#resolveAllPublicAsync(token);
   }
@@ -1184,6 +1306,7 @@ export class Container implements Disposable, AsyncDisposable {
     }
   }
 
+  /** Tests visible or own registration availability without construction. */
   has<T>(token: Token<T>, options: RegistrationQueryOptions = {}): boolean {
     assertToken(token);
     const context = this.#activeContext();
@@ -1209,6 +1332,7 @@ export class Container implements Disposable, AsyncDisposable {
       : this.#lookup(token) !== undefined;
   }
 
+  /** Preflights a graph without constructing providers. */
   validate<T>(token: Token<T>, options: ValidationOptions = {}): void {
     assertToken(token);
     this.#assertCanResolve(token);
@@ -1221,6 +1345,7 @@ export class Container implements Disposable, AsyncDisposable {
     );
   }
 
+  /** Returns a frozen, side-effect-free view of the declared graph. */
   inspect<T>(token: Token<T>): DependencyGraph {
     assertToken(token);
     this.#assertCanResolve(token);
@@ -1302,10 +1427,12 @@ export class Container implements Disposable, AsyncDisposable {
     });
   }
 
+  /** Whether disposal has started. */
   get disposed(): boolean {
     return this.#lifecycle !== "active";
   }
 
+  /** Disposes a fully synchronous container tree in ownership order. */
   dispose(): void {
     if (this.#family.mutating) {
       throw new TypeError("Cannot dispose a container during registration mutation.");
@@ -1347,6 +1474,7 @@ export class Container implements Disposable, AsyncDisposable {
     }
   }
 
+  /** Waits for in-flight work and disposes the container tree asynchronously. */
   disposeAsync(): Promise<void> {
     const activeDisposalContext = disposalContext.getStore();
     const activeDisposal = activeDisposalContext?.operation;
@@ -2162,6 +2290,14 @@ export class Container implements Disposable, AsyncDisposable {
 
   #createResolver(captor?: LifetimeCaptor): Resolver {
     return Object.freeze({
+      has: <T>(
+        target: Token<T>,
+        options?: RegistrationQueryOptions,
+      ) => {
+        assertToken(target);
+        this.#assertCanResolve(target);
+        return this.has(target, options);
+      },
       resolve: <T>(target: Token<T>) => this.#resolvePublicSync(target, captor),
       resolveAsync: <T>(target: Token<T>) =>
         this.#resolvePublicAsync(target, captor),
@@ -2488,7 +2624,7 @@ export class Container implements Disposable, AsyncDisposable {
 
   #addRegistration(
     token: AnyToken,
-    provider: AnyProvider | undefined,
+    provider: AnyProviderInput | undefined,
     mode: BindingSet["mode"],
   ): this {
     const existing = this.#registrations.get(token);
@@ -3311,9 +3447,10 @@ function lifetimeRank(scope: "singleton" | "scoped" | "resolution"): number {
 }
 
 function normalizeProvider(
-  provider: AnyProvider | undefined,
+  input: AnyProviderInput | undefined,
   registeredToken: AnyToken,
 ): NormalizedProvider {
+  const provider = input as AnyProvider | undefined;
   if ((typeof provider !== "object" && typeof provider !== "function") || !provider) {
     throw registrationError(
       "INVALID_PROVIDER",

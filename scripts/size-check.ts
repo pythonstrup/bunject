@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const budgets = [
   { file: "dist/index.js", gzipBytes: 14 * 1024 },
-  { file: "dist/index.d.ts", gzipBytes: 3 * 1024 },
+  { file: "dist/index.d.ts", gzipBytes: 4 * 1024 },
 ] as const;
 
 for (const budget of budgets) {

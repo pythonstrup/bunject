@@ -2,11 +2,13 @@ import {
   Container,
   Injectable,
   all,
+  defineProvider,
   lazy,
   optional,
   resolver,
   token,
   type ClassProvider,
+  type DefinedProvider,
   type InjectionToken,
   type Lazy,
   type Provider,
@@ -132,6 +134,72 @@ container.register(NEEDS_DATABASE, {
   useClass: NeedsDatabase,
 });
 
+const reusableFactory = defineProvider<NeedsDatabase>()({
+  inject: [DATABASE, optional(CACHE)],
+  useFactory: (database, cache) => {
+    database.query();
+    cache?.get();
+    return new NeedsDatabase(database);
+  },
+});
+const reusableAsync = defineProvider<NeedsDatabase>()({
+  inject: [DATABASE],
+  useFactoryAsync: async (database) => new NeedsDatabase(database),
+});
+const reusableClass = defineProvider<NeedsDatabase>()({
+  inject: [DATABASE],
+  useClass: NeedsDatabase,
+});
+const reusableFactoryResult: NeedsDatabase = reusableFactory.useFactory(
+  new Database(),
+  undefined,
+);
+const reusableClassConstructor: typeof NeedsDatabase = reusableClass.useClass;
+void reusableFactoryResult;
+void reusableClassConstructor;
+const storedProvider: DefinedProvider<NeedsDatabase> = reusableFactory;
+container.register(NEEDS_DATABASE, storedProvider);
+container.registerMulti(NEEDS_DATABASE, storedProvider);
+container.rebind(NEEDS_DATABASE, storedProvider);
+container.register(NEEDS_DATABASE, reusableAsync);
+container.registerMulti(NEEDS_DATABASE, reusableClass);
+
+const inferredProvider = defineProvider({
+  inject: [DATABASE],
+  useFactory: (database) => new NeedsDatabase(database),
+  onActivation: (value) => {
+    value.database.query();
+  },
+});
+const inferredStored: DefinedProvider<NeedsDatabase> = inferredProvider;
+const inferredResult: NeedsDatabase = inferredProvider.useFactory(new Database());
+void inferredStored;
+void inferredResult;
+
+// @ts-expect-error the defined provider service type is invariant
+container.register(CACHE, storedProvider);
+
+defineProvider<NeedsDatabase>()({
+  inject: [CACHE],
+  // @ts-expect-error callback parameters must match the dependency tuple
+  useFactory: (database: Database) => new NeedsDatabase(database),
+});
+
+defineProvider<NeedsDatabase>()({
+  inject: [CACHE],
+  // @ts-expect-error class constructors must match the dependency tuple
+  useClass: NeedsDatabase,
+});
+
+// @ts-expect-error factory results must match the declared service type
+defineProvider<NeedsDatabase>()({ inject: [DATABASE], useFactory: () => new Cache() });
+
+// @ts-expect-error synchronous factories cannot return Promises
+defineProvider<NeedsDatabase>()({ inject: [DATABASE], useFactory: async (database) => new NeedsDatabase(database) });
+
+// @ts-expect-error async factories must return Promise-like values
+defineProvider<NeedsDatabase>()({ inject: [DATABASE], useFactoryAsync: (database) => new NeedsDatabase(database) });
+
 // @ts-expect-error explicit dependency tuples must match the constructor
 container.register(NEEDS_DATABASE, {
   inject: [CACHE],
@@ -198,12 +266,16 @@ const ACTIVE_RESOLVER = token<Resolver>("ACTIVE_RESOLVER");
 container.register(ACTIVE_RESOLVER, {
   inject: [resolver()],
   useFactory: (activeResolver) => {
+    const available: boolean = activeResolver.has(DATABASE);
+    const own: boolean = activeResolver.has(DATABASE, { own: true });
     const resolved: Database = activeResolver.resolve(DATABASE);
     const allCaches: readonly Cache[] = activeResolver.resolveAll(CACHE);
     const pending: Promise<Database> = activeResolver.resolveAsync(DATABASE);
     const pendingAll: Promise<readonly Cache[]> =
       activeResolver.resolveAllAsync(CACHE);
     void resolved;
+    void available;
+    void own;
     void allCaches;
     void pending;
     void pendingAll;

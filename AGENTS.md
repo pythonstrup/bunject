@@ -6,6 +6,7 @@ changing behavior.
 ## Start here
 
 - [Architecture](./ARCHITECTURE.md): runtime flow, ownership, and invariants.
+- [Public API](./docs/api.md): exported contracts and runtime boundaries.
 - [Documentation index](./docs/index.md): product and operational knowledge.
 - [Execution plans](./docs/exec-plans/README.md): current goals, decisions,
   evidence, and remaining work.

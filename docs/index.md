@@ -5,6 +5,7 @@ Use this page as the stable map for repository knowledge.
 ## Product and design
 
 - [Architecture](../ARCHITECTURE.md)
+- [Public API reference](./api.md)
 - [Production maturity criteria](./maturity.md)
 - [Harness and agent feedback loop](./harness.md)
 - [Migration guides](./migrations.md)

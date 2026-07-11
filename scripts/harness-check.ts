@@ -9,7 +9,10 @@ const requiredFiles = [
   "ARCHITECTURE.md",
   "README.md",
   "SECURITY.md",
+  ".github/workflows/ci.yml",
+  ".github/workflows/release.yml",
   "docs/index.md",
+  "docs/api.md",
   "docs/harness.md",
   "docs/maturity.md",
   "docs/exec-plans/README.md",
@@ -89,6 +92,7 @@ for (const script of [
   "check",
   "harness:check",
   "package:check",
+  "release:check",
   "test:deno",
   "typecheck:min",
 ]) {
@@ -112,6 +116,65 @@ for (const script of [
 ]) {
   if (!checkSteps.includes(`bun run ${script}`)) {
     failures.push(`The complete check must run ${script}.`);
+  }
+}
+
+const ciWorkflow = (
+  await readFile(join(root, ".github/workflows/ci.yml"), "utf8")
+).replaceAll("\r\n", "\n");
+const releaseWorkflow = (
+  await readFile(join(root, ".github/workflows/release.yml"), "utf8")
+).replaceAll("\r\n", "\n");
+const compatibilityJobs = [
+  "quality",
+  "minimum-bun",
+  "node-runtime",
+  "windows-package",
+  "deno-runtime",
+] as const;
+for (const job of compatibilityJobs) {
+  if (!ciWorkflow.includes(`\n  ${job}:\n`)) {
+    failures.push(`CI workflow is missing the ${job} job.`);
+  }
+  if (!releaseWorkflow.includes(`\n  ${job}:\n`)) {
+    failures.push(`Release workflow is missing the ${job} compatibility job.`);
+  }
+}
+for (const marker of [
+  "bun-version: 1.3.10",
+  "node: [22, 24, 26]",
+  "runs-on: windows-latest",
+  "deno-version: v2.x",
+  "bun run check",
+  "bun run package:check",
+  "bun run test:deno",
+]) {
+  if (!ciWorkflow.includes(marker)) {
+    failures.push(`CI workflow is missing: ${marker}.`);
+  }
+  if (!releaseWorkflow.includes(marker)) {
+    failures.push(`Release compatibility gates are missing: ${marker}.`);
+  }
+}
+const publishIndex = releaseWorkflow.indexOf("\n  publish:\n");
+const publishJob = publishIndex === -1
+  ? ""
+  : releaseWorkflow.slice(publishIndex);
+if (!publishJob.includes("    needs:\n")) {
+  failures.push("Release publish must depend on compatibility jobs.");
+}
+for (const job of compatibilityJobs) {
+  if (!publishJob.includes(`      - ${job}\n`)) {
+    failures.push(`Release publish must wait for ${job}.`);
+  }
+}
+for (const marker of [
+  "id-token: write",
+  "bun run release:check",
+  "npm publish --provenance --access public",
+]) {
+  if (!publishJob.includes(marker)) {
+    failures.push(`Release publish is missing: ${marker}.`);
   }
 }
 

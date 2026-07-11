@@ -9,10 +9,14 @@ This project follows [Semantic Versioning](https://semver.org/).
 - Class, value, factory, async factory, alias, and multi providers.
 - Singleton, scoped, resolution, and transient lifetimes.
 - Child scopes, captive-dependency validation, optional/all/lazy descriptors,
-  and an activation-scoped read-only Resolver.
+  and an activation-scoped read-only Resolver with registration queries.
+- Reusable, dependency-checked provider definitions through `defineProvider()`.
 - Sync/async resolution, deterministic disposal, activation hooks, graph
   inspection, atomic modules, safe local mutation, and provider cleanup adapters.
-- Packed Bun/Node consumers, Deno runtime smoke, declaration and release gates,
-  coverage, stress, property, package-lint, size, and peer benchmark harnesses.
+- Packed TypeScript 5.4/current, Bun, and Node consumers; Deno runtime smoke;
+  declaration, release, coverage, stress, property, package-lint, size, and
+  peer benchmark harnesses.
 - Versioned agent map, architecture, execution plan, and mechanical repository
-  harness based on repository-local, agent-readable feedback.
+  harness based on repository-local, agent-readable feedback, plus a public API
+  reference, packed-document link validation, and compatibility-gated OIDC
+  publication.

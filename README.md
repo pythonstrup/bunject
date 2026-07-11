@@ -6,24 +6,32 @@ no runtime dependencies, global container, legacy decorator requirement, or
 
 It provides explicit typed tokens, four lifetimes, child scopes, multi-binding,
 sync/async graph validation, deterministic resource disposal, and structured
-dependency errors. The runtime surface is Bun-first and Node-compatible; the
-compiled package also runs on modern Node.js and Deno.
+dependency errors. The ESM-only runtime surface is Bun-first and compatible
+with modern Node.js and Deno 2 through Node compatibility APIs.
 
 ## Install
 
 ```sh
 bun add bunject
+# or: npm install bunject
 ```
+
+CommonJS projects should use dynamic `import("bunject")`; synchronous
+`require()` is not a supported package contract.
 
 Requirements:
 
 - Bun 1.3.10 or newer
 - Node.js 22 or newer when using the compiled package outside Bun
+- Deno 2 when using its Node compatibility layer
 - TypeScript 5.4 or newer
 - standard decorators; do not enable `experimentalDecorators` or
   `emitDecoratorMetadata`
 - `ESNext.Disposable` in `compilerOptions.lib` when the project does not use
   the complete `ESNext` library
+
+Browser and non-Node-compatible edge runtimes are not supported because
+Bunject uses async-local context to preserve concurrent resolution graphs.
 
 ```json
 {
@@ -92,6 +100,21 @@ container.register(DATABASE, {
 container.register(PRIMARY_DATABASE, { useExisting: DATABASE });
 ```
 
+Use `defineProvider<T>()` when a dependency-bearing definition must be stored
+or shared without losing its checked tuple:
+
+```ts
+import { defineProvider } from "bunject";
+
+const cacheProvider = defineProvider<Cache>()({
+  inject: [CONFIG],
+  scope: "singleton",
+  useFactory: (config) => new Cache(config),
+});
+
+container.register(CACHE, cacheProvider);
+```
+
 Class and factory providers support `singleton`, `scoped`, `resolution`, and
 `transient` lifetimes. They default to `transient`; values are always borrowed
 singletons and aliases retain the target's identity.
@@ -152,7 +175,7 @@ container.register(REPORT_FACTORY, {
 });
 ```
 
-The injected `Resolver` is a frozen, read-only surface with `resolve`,
+The injected `Resolver` is a frozen, read-only surface with `has`, `resolve`,
 `resolveAsync`, `resolveAll`, and `resolveAllAsync`. It is bound to the
 provider's activation container: a scoped provider activated in a child sees
 that child, while a parent singleton remains owner-affine.
@@ -243,6 +266,11 @@ owned resources stay valid for existing callers and are disposed with their
 scope. For parallel tests, a child scope or a fresh root container is usually
 simpler than mutating a shared root.
 
+For live application reconfiguration, build and validate a fresh root, switch
+new traffic to it, drain users of the old root, then call `disposeAsync()` on
+the old generation. `rebind()` and `unregister()` intentionally do not close
+objects that existing callers may still hold.
+
 ## Errors
 
 `ResolutionError` exposes a stable `code`, the complete `path`, an optional
@@ -261,10 +289,9 @@ Resolution path: UserController -> UserService -> UserRepository -> DATABASE
   decorator metadata, provider `inject`, or `static inject`.
 - Decorator dependency tuples are not inherited. A subclass with constructor
   dependencies must redeclare them; decorator scope metadata may be inherited.
-- Keep dependency-bearing provider objects inline. For a reusable definition,
-  preserve its exact tuple with `FactoryProvider<T, typeof dependencies>` or
-  `ClassProvider<T, typeof dependencies>`; the broad `Provider<T>` storage type
-  cannot preserve an existential dependency tuple.
+- Keep dependency-bearing providers inline or preserve their checked tuple with
+  `defineProvider<T>()`; a plain `Provider<T>` union cannot express an
+  existential dependency tuple in TypeScript.
 - Parameter decorators and automatic class registration are intentionally not
   provided.
 - Promise-like values are not service values. Wrap a Promise in an object or
@@ -285,7 +312,8 @@ The repository defines type, coverage, property, generated-graph, concurrency,
 packed-consumer, package-lint, public-API, size, and runtime-matrix checks.
 Its [agent harness](./docs/harness.md) keeps architecture, execution state,
 documentation links, and core repository invariants machine-readable.
-The exact [production maturity criteria](./docs/maturity.md),
+The [public API reference](./docs/api.md), exact
+[production maturity criteria](./docs/maturity.md),
 [migration guides](./docs/migrations.md), [security policy](./SECURITY.md),
 and [support policy](./docs/support.md) are public. Passing those gates is not a
 claim of ecosystem adoption or battle-testing; those require real users and
