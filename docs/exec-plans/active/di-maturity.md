@@ -14,7 +14,7 @@ Ecosystem adoption and battle-testing remain external evidence.
 - The complete local merge gate passes on the current worktree: 163 tests,
   97.62% overall lines, and 100% kernel lines.
 - The verified runtime, public API, packaging, compatibility, and harness
-  baseline is committed through `1dca27b`.
+  baseline is committed through `6245c8a`.
 - The activation-scoped `resolver()` descriptor and provider-level cleanup
   adapters have focused, type, coverage, packed-consumer, and combined-gate
   evidence.
@@ -70,8 +70,8 @@ Ecosystem adoption and battle-testing remain external evidence.
 
 ## In progress
 
-- Commit the independently audited optional-resolution and compatibility
-  baseline, then record its Git hash.
+- Define the smallest coherent token-level observer contract before deciding
+  whether its cross-provider instrumentation value justifies the API.
 
 ## Remaining work
 
@@ -149,3 +149,5 @@ Ecosystem adoption and battle-testing remain external evidence.
 - 2026-07-11: passed the representative benchmark and independent optional API,
   public declaration, and cross-runtime/package audits with no remaining local
   P0, P1, or P2 finding in the changed surface.
+- 2026-07-11: committed the optional-resolution and runtime-compatibility
+  baseline as `6245c8a`.
