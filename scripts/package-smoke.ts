@@ -58,11 +58,11 @@ try {
   );
   await writeFile(
     join(consumerDirectory, "bun-consumer.ts"),
-    `import { Container, Service, token } from "bunject";
+    `import { Container, Injectable, token } from "bunject";
 
 const VALUE = token<number>("VALUE");
 
-@Service({ scope: "singleton" })
+@Injectable({ scope: "singleton" })
 class Application {
   static inject = [VALUE] as const;
   constructor(readonly value: number) {}
@@ -103,7 +103,7 @@ if (container.resolve(Application).value !== 42) {
           lib: ["ES2022", "ESNext.Decorators", "ESNext.Disposable"],
           module: "NodeNext",
           moduleResolution: "NodeNext",
-          noEmit: true,
+          outDir: "out",
           skipLibCheck: false,
           strict: true,
           target: "ES2022",
@@ -122,8 +122,9 @@ if (container.resolve(Application).value !== 42) {
     consumerDirectory,
   );
   await run(["bun", "run", "bun-consumer.ts"], consumerDirectory);
+  await run(["node", "out/bun-consumer.js"], consumerDirectory);
   await run(["node", "node-consumer.mjs"], consumerDirectory);
-  console.log("Package smoke test passed in Bun and Node.");
+  console.log("Package smoke test passed in Bun, emitted decorators, and Node.");
 } finally {
   await rm(temporaryDirectory, { recursive: true, force: true });
 }

@@ -92,7 +92,7 @@ describe("resolver safety", () => {
     });
     container.register(ROOT, {
       inject: [CREATED, MISSING],
-      useFactory: (created) => created,
+      useFactory: (created, _missing) => created,
     });
 
     expect(() => container.resolve(ROOT)).toThrow(ResolutionError);
@@ -192,6 +192,94 @@ describe("resolver safety", () => {
     const outcome = await Promise.race([
       Promise.allSettled([container.resolveAsync(A), container.resolveAsync(B)]),
       Bun.sleep(150).then(() => "timeout" as const),
+    ]);
+
+    expect(outcome).not.toBe("timeout");
+    for (const result of outcome as PromiseSettledResult<object>[]) {
+      expect(result.status).toBe("rejected");
+      expect((result as PromiseRejectedResult).reason).toMatchObject({
+        code: "CIRCULAR",
+      });
+    }
+  });
+
+  test("detects a cycle that crosses a newly created async dependency", async () => {
+    const A = token<object>("A");
+    const B = token<object>("B");
+    const C = token<object>("C");
+    const container = new Container();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    container.register(A, {
+      scope: "singleton",
+      useFactoryAsync: async () => container.resolveAsync(C),
+    });
+    container.register(B, {
+      scope: "singleton",
+      useFactoryAsync: async () => {
+        await gate;
+        return container.resolveAsync(A);
+      },
+    });
+    container.register(C, {
+      scope: "singleton",
+      useFactoryAsync: async () => container.resolveAsync(B),
+    });
+
+    const a = container.resolveAsync(A);
+    const b = container.resolveAsync(B);
+    await Promise.resolve();
+    await Promise.resolve();
+    release();
+    const outcome = await Promise.race([
+      Promise.allSettled([a, b]),
+      Bun.sleep(100).then(() => "timeout" as const),
+    ]);
+
+    expect(outcome).not.toBe("timeout");
+    for (const result of outcome as PromiseSettledResult<object>[]) {
+      expect(result.status).toBe("rejected");
+      expect((result as PromiseRejectedResult).reason).toMatchObject({
+        code: "CIRCULAR",
+      });
+    }
+  });
+
+  test("tracks declared async dependencies in the construction wait graph", async () => {
+    const A = token<object>("A");
+    const B = token<object>("B");
+    const C = token<object>("C");
+    const container = new Container();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    container.register(A, {
+      scope: "singleton",
+      useFactoryAsync: async () => container.resolveAsync(C),
+    });
+    container.register(B, {
+      scope: "singleton",
+      useFactoryAsync: async () => {
+        await gate;
+        return container.resolveAsync(A);
+      },
+    });
+    container.register(C, {
+      inject: [B],
+      scope: "singleton",
+      useFactoryAsync: async () => ({}),
+    });
+
+    const c = container.resolveAsync(C);
+    const b = container.resolveAsync(B);
+    await Promise.resolve();
+    release();
+    const outcome = await Promise.race([
+      Promise.allSettled([c, b]),
+      Bun.sleep(100).then(() => "timeout" as const),
     ]);
 
     expect(outcome).not.toBe("timeout");

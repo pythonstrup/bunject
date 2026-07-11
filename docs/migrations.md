@@ -25,7 +25,7 @@ container.resolve(UserRepository);
 Replace `@injectable()` and parameter `@inject()` with one of:
 
 ```ts
-@Service({ inject: [DATABASE], scope: "singleton" })
+@Injectable({ inject: [DATABASE], scope: "singleton" })
 class UserRepository {
   constructor(readonly database: Database) {}
 }

@@ -20,7 +20,8 @@
     "docs",
     "CHANGELOG.md",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "SECURITY.md"
   ],
   "exports": {
     ".": {
@@ -35,11 +36,13 @@
   },
   "packageManager": "bun@1.3.14",
   "scripts": {
+    "api:check": "bun run build && bun run scripts/project-check.ts",
     "bench": "bun run bench/container.bench.ts",
     "build": "tsc -p tsconfig.build.json",
     "package:check": "bun run scripts/package-smoke.ts",
     "package:lint": "bun run scripts/package-lint.ts",
     "prepack": "bun run build",
+    "release:check": "bun run build && bun run scripts/project-check.ts --release",
     "size": "bun run build && bun run scripts/size-check.ts",
     "test:coverage": "bun test --coverage",
     "test:property": "bun test ./test/property.test.ts",
@@ -47,7 +50,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "typecheck:min": "bun x --package typescript@5.4.5 tsc -p tsconfig.json",
     "test": "bun test",
-    "check": "bun run typecheck && bun run typecheck:min && bun run test:coverage && bun run test:stress && bun run package:lint && bun run package:check && bun run size"
+    "check": "bun run typecheck && bun run typecheck:min && bun run test:coverage && bun run test:stress && bun run package:lint && bun run package:check && bun run size && bun run api:check"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",

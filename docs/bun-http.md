@@ -5,16 +5,16 @@ each request. Request-local values are borrowed; request-created class and
 factory resources are owned by the child.
 
 ```ts
-import { Container, Service, token } from "bunject";
+import { Container, Injectable, token } from "bunject";
 
 const REQUEST = token<Request>("REQUEST");
 
-@Service({ inject: [REQUEST], scope: "scoped" })
+@Injectable({ inject: [REQUEST], scope: "scoped" })
 class RequestContext {
   constructor(readonly request: Request) {}
 }
 
-@Service({ inject: [RequestContext] })
+@Injectable({ inject: [RequestContext] })
 class RequestHandler {
   constructor(readonly context: RequestContext) {}
 
@@ -26,8 +26,6 @@ class RequestHandler {
 const application = new Container();
 application.register(RequestContext);
 application.register(RequestHandler);
-application.validate(RequestHandler);
-
 Bun.serve({
   async fetch(request) {
     await using scope = application.createScope();
@@ -41,6 +39,10 @@ Do not register `Request` on the root. A singleton also cannot inject
 `RequestContext`; captive-dependency validation rejects that graph before the
 singleton is constructed. Put request-dependent services in `scoped`,
 `resolution`, or `transient` lifetimes.
+
+Validate this root in an integration test after registering a sample `REQUEST`
+on a child scope; validating it on the application root correctly reports the
+missing request-local token.
 
 If request cleanup is synchronous, `using` is sufficient. Prefer
 `await using` when a request graph may contain `Symbol.asyncDispose`, an async

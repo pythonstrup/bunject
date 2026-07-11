@@ -42,7 +42,7 @@ double-disposing instances.
 - [x] Atomic module/bulk registration
 - [x] InversifyJS, TSyringe, and Awilix migration guides
 - [x] Bun HTTP request-scope example
-- [x] Stable declaration/package lint and SemVer changelog gate
+- [x] Checked declaration hash, package lint, and versioned changelog gate
 
 ## Engineering gates
 
@@ -58,9 +58,19 @@ double-disposing instances.
 - [x] Peer benchmark harness and compressed-size release budgets
 - [x] Zero runtime dependencies and allowlisted package payload
 - [x] MIT license, changelog, security policy, and support policy
-- [ ] Deno 2 compatibility job
-- [ ] Trusted provenance release workflow
+- [x] Deno 2 compatibility job configured
+- [x] Local Deno 2.8.1 runtime smoke
+- [x] OIDC provenance release workflow configured
+- [ ] Deno 2 and runtime-matrix jobs passed on the eventual remote
+- [ ] npm trusted publisher, repository metadata, and provenance release verified
+
+`api/index.d.ts.sha256` deliberately makes any exported declaration change a
+review event; the maintainer must assess its SemVer impact, update the
+changelog, and then refresh the hash. A release additionally requires a
+`v<package version>` tag and a dated changelog heading.
 
 CI configuration is repository evidence only after it has run on the eventual
-remote. Popularity, ecosystem adoption, and battle-testing remain external
-metrics and cannot be claimed from repository tests.
+remote. The provenance workflow also needs the final repository URL in package
+metadata and npm trusted-publisher configuration. Popularity, ecosystem
+adoption, and battle-testing remain external metrics and cannot be claimed from
+repository tests.

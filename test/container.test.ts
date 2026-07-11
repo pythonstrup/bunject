@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   Container,
   ResolutionError,
-  Service,
+  Injectable,
   token,
   type Token,
 } from "../src/index";
@@ -15,13 +15,13 @@ describe("Container", () => {
     const DATABASE = token<Database>("DATABASE");
     const LABEL = token<string>("LABEL");
 
-    @Service()
+    @Injectable()
     class Repository {
       static inject = [DATABASE] as const;
       constructor(readonly database: Database) {}
     }
 
-    @Service()
+    @Injectable()
     class Application {
       static inject = [Repository, LABEL] as const;
       constructor(
@@ -45,13 +45,13 @@ describe("Container", () => {
   });
 
   test("honors singleton, transient, and explicit scope precedence", () => {
-    @Service({ scope: "singleton" })
+    @Injectable({ scope: "singleton" })
     class Singleton {}
 
-    @Service()
+    @Injectable()
     class Transient {}
 
-    @Service({ scope: "singleton" })
+    @Injectable({ scope: "singleton" })
     class Overridden {}
 
     const container = new Container();
@@ -111,13 +111,13 @@ describe("Container", () => {
   test("reports the complete missing dependency path", () => {
     const DATABASE = token<object>("DATABASE");
 
-    @Service()
+    @Injectable()
     class Repository {
       static inject = [DATABASE] as const;
       constructor(_database: object) {}
     }
 
-    @Service()
+    @Injectable()
     class Application {
       static inject = [Repository] as const;
       constructor(_repository: Repository) {}
@@ -199,7 +199,7 @@ describe("Container", () => {
     const CONFIG = token<object>("CONFIG");
     let calls = 0;
 
-    @Service()
+    @Injectable()
     class Application {
       static inject = [CONFIG] as const;
       constructor(_config: object) {}
@@ -222,7 +222,7 @@ describe("Container", () => {
     const CONFIG = token<{ port: number }>("CONFIG");
     let calls = 0;
 
-    @Service()
+    @Injectable()
     class Application {
       static inject = [CONFIG] as const;
       constructor(readonly config: { port: number }) {}
@@ -269,7 +269,7 @@ describe("Container", () => {
     const CONFIG = token<object>("CONFIG");
     let constructions = 0;
 
-    @Service({ scope: "singleton" })
+    @Injectable({ scope: "singleton" })
     class Application {
       static inject = [CONFIG] as const;
       constructor(_config: object) {
@@ -303,13 +303,13 @@ describe("Container", () => {
   test("rebases a shared pending failure for each caller", async () => {
     const SHARED = token<object>("SHARED");
 
-    @Service()
+    @Injectable()
     class FirstRoot {
       static inject = [SHARED] as const;
       constructor(_shared: object) {}
     }
 
-    @Service()
+    @Injectable()
     class SecondRoot {
       static inject = [SHARED] as const;
       constructor(_shared: object) {}
@@ -365,7 +365,7 @@ describe("Container", () => {
   test("preserves provider failures as causes", () => {
     const cause = new Error("boom");
 
-    @Service()
+    @Injectable()
     class Broken {
       constructor() {
         throw cause;
@@ -386,7 +386,7 @@ describe("Container", () => {
   });
 
   test("does not auto-register decorators and isolates containers", () => {
-    @Service({ scope: "singleton" })
+    @Injectable({ scope: "singleton" })
     class ServiceA {}
 
     const first = new Container();
@@ -402,7 +402,7 @@ describe("Container", () => {
     const FIRST = token<number>("FIRST");
     const SECOND = token<number>("SECOND");
     const RESULT = token<number>("RESULT");
-    const inject: Token<number>[] = [FIRST];
+    const inject: [Token<number>] = [FIRST];
     const provider = {
       inject,
       useFactory: (value: number) => value,
@@ -422,7 +422,7 @@ describe("Container", () => {
     const FIRST = token<number>("FIRST");
     const SECOND = token<number>("SECOND");
 
-    @Service()
+    @Injectable()
     class Consumer {
       static inject: Token<number>[] = [FIRST];
       constructor(readonly value: number) {}
@@ -437,10 +437,10 @@ describe("Container", () => {
     expect(container.resolve(Consumer).value).toBe(1);
   });
 
-  test("supports inherited service scope and static inject metadata", () => {
+  test("supports inherited injectable scope and static inject metadata", () => {
     const VALUE = token<number>("VALUE");
 
-    @Service({ scope: "singleton" })
+    @Injectable({ scope: "singleton" })
     class BaseService {
       static inject = [VALUE] as const;
       constructor(readonly value: number) {}

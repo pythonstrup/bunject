@@ -76,12 +76,47 @@ export type InjectableClass<T = unknown> = Constructor<T> & {
   readonly inject?: readonly Dependency<any>[];
 };
 
-export interface ServiceOptions {
+type StaticInjectMatchesConstructor<TClass extends ClassToken<any>> =
+  TClass extends {
+    readonly inject: infer TDependencies extends readonly Dependency<any>[];
+  }
+    ? TClass extends abstract new (
+          ...dependencies: DependencyValues<TDependencies>
+        ) => any
+      ? unknown
+      : never
+    : unknown;
+
+type InjectableDeclarationMatchesConstructor<
+  TClass extends ClassToken<any>,
+> = TClass extends { readonly inject: readonly Dependency<any>[] }
+  ? StaticInjectMatchesConstructor<TClass>
+  : ConstructorParameters<TClass> extends readonly []
+    ? unknown
+    : never;
+
+type ProviderMatchesDeclaration<TProvider> =
+  TProvider extends {
+    readonly useClass: infer TClass extends InjectableClass<any>;
+    readonly inject: infer TDependencies extends readonly Dependency<any>[];
+  }
+    ? TClass extends new (
+          ...dependencies: DependencyValues<TDependencies>
+        ) => any
+      ? unknown
+      : never
+    : TProvider extends {
+          readonly useClass: infer TClass extends InjectableClass<any>;
+        }
+      ? StaticInjectMatchesConstructor<TClass>
+      : unknown;
+
+export interface InjectableOptions {
   readonly scope?: Scope;
   readonly inject?: never;
 }
 
-export interface ServiceOptionsWithInject<
+export interface InjectableOptionsWithInject<
   TDependencies extends readonly Dependency<any>[],
 > {
   readonly scope?: Scope;
@@ -138,24 +173,48 @@ export interface DependencyGraph {
 }
 
 export interface RegistrationRegistry {
-  register<T>(service: InjectableClass<T>): this;
-  register<T, const TDependencies extends readonly Dependency<any>[] = readonly []>(
+  register<const TClass extends InjectableClass<any>>(
+    service: TClass & StaticInjectMatchesConstructor<NoInfer<TClass>>,
+  ): this;
+  register<T, const TClass extends InjectableClass<NonPromise<T>>>(
+    token: Token<T>,
+    provider: MetadataClassProvider<NoInfer<T>, TClass>,
+  ): this;
+  register<
+    T,
+    const TDependencies extends readonly Dependency<any>[],
+  >(
     token: Token<T>,
     provider: ClassProvider<NoInfer<T>, TDependencies>,
   ): this;
   register<T>(token: Token<T>, provider: ValueProvider<NoInfer<T>>): this;
   register<T>(token: Token<T>, provider: ExistingProvider<NoInfer<T>>): this;
-  register<T, const TDependencies extends readonly Dependency<any>[] = readonly []>(
+  register<
+    T,
+    const TDependencies extends readonly Dependency<any>[],
+  >(
     token: Token<T>,
-    provider:
-      | FactoryProvider<NoInfer<T>, TDependencies>
-      | AsyncFactoryProvider<NoInfer<T>, TDependencies>,
+    provider: FactoryProvider<NoInfer<T>, TDependencies>,
   ): this;
-  register<T>(token: Token<T>, provider: Provider<NoInfer<T>>): this;
+  register<
+    T,
+    const TDependencies extends readonly Dependency<any>[],
+  >(
+    token: Token<T>,
+    provider: AsyncFactoryProvider<NoInfer<T>, TDependencies>,
+  ): this;
+  register<T, const TProvider extends Provider<NoInfer<T>>>(
+    token: Token<T>,
+    provider: TProvider & ProviderMatchesDeclaration<NoInfer<TProvider>>,
+  ): this;
 
+  registerMulti<T, const TClass extends InjectableClass<NonPromise<T>>>(
+    token: Token<T>,
+    provider: MetadataClassProvider<NoInfer<T>, TClass>,
+  ): this;
   registerMulti<
     T,
-    const TDependencies extends readonly Dependency<any>[] = readonly [],
+    const TDependencies extends readonly Dependency<any>[],
   >(
     token: Token<T>,
     provider: ClassProvider<NoInfer<T>, TDependencies>,
@@ -164,14 +223,22 @@ export interface RegistrationRegistry {
   registerMulti<T>(token: Token<T>, provider: ExistingProvider<NoInfer<T>>): this;
   registerMulti<
     T,
-    const TDependencies extends readonly Dependency<any>[] = readonly [],
+    const TDependencies extends readonly Dependency<any>[],
   >(
     token: Token<T>,
-    provider:
-      | FactoryProvider<NoInfer<T>, TDependencies>
-      | AsyncFactoryProvider<NoInfer<T>, TDependencies>,
+    provider: FactoryProvider<NoInfer<T>, TDependencies>,
   ): this;
-  registerMulti<T>(token: Token<T>, provider: Provider<NoInfer<T>>): this;
+  registerMulti<
+    T,
+    const TDependencies extends readonly Dependency<any>[],
+  >(
+    token: Token<T>,
+    provider: AsyncFactoryProvider<NoInfer<T>, TDependencies>,
+  ): this;
+  registerMulti<T, const TProvider extends Provider<NoInfer<T>>>(
+    token: Token<T>,
+    provider: TProvider & ProviderMatchesDeclaration<NoInfer<TProvider>>,
+  ): this;
 }
 
 export type RegistrationModule = (registry: RegistrationRegistry) => void;
@@ -194,6 +261,17 @@ export interface ClassProvider<
   readonly useExisting?: never;
 }
 
+type MetadataClassProvider<
+  T,
+  TClass extends InjectableClass<NonPromise<T>> = InjectableClass<
+    NonPromise<T>
+  >,
+> = Omit<ClassProvider<T, readonly []>, "useClass" | "inject"> & {
+  readonly useClass: TClass &
+    StaticInjectMatchesConstructor<NoInfer<TClass>>;
+  readonly inject?: never;
+};
+
 export interface ValueProvider<T> {
   readonly useValue: NonPromise<T>;
   readonly scope?: never;
@@ -211,7 +289,7 @@ export interface FactoryProvider<
 > {
   readonly inject?: TDependencies;
   readonly useFactory: (
-    ...dependencies: DependencyValues<TDependencies>
+    ...dependencies: DependencyValues<NoInfer<TDependencies>>
   ) => NonPromise<T>;
   readonly scope?: Scope;
   readonly onActivation?: ActivationHook<T>;
@@ -227,7 +305,7 @@ export interface AsyncFactoryProvider<
 > {
   readonly inject?: TDependencies;
   readonly useFactoryAsync: (
-    ...dependencies: DependencyValues<TDependencies>
+    ...dependencies: DependencyValues<NoInfer<TDependencies>>
   ) => PromiseLike<NonPromise<T>>;
   readonly scope?: Scope;
   readonly onActivation?: ActivationHook<T>;
@@ -250,6 +328,7 @@ export interface ExistingProvider<T> {
 
 export type Provider<T> =
   | ClassProvider<T>
+  | MetadataClassProvider<T>
   | ValueProvider<T>
   | FactoryProvider<T>
   | AsyncFactoryProvider<T>
@@ -279,6 +358,7 @@ type AnyToken = Token<any>;
 type AnyDependency = Dependency<any>;
 type AnyProvider =
   | ClassProvider<any, readonly AnyDependency[]>
+  | MetadataClassProvider<any>
   | ValueProvider<any>
   | FactoryProvider<any, readonly AnyDependency[]>
   | AsyncFactoryProvider<any, readonly AnyDependency[]>
@@ -348,7 +428,10 @@ interface Construction {
   readonly waits: Map<Construction, number>;
 }
 
-type RuntimeDependencies = Map<Container, Set<AnyToken>>;
+const RUNTIME_DEPENDENCY_RESOLVE = 1;
+const RUNTIME_DEPENDENCY_HAS = 2;
+const RUNTIME_DEPENDENCY_HAS_OWN = 4;
+type RuntimeDependencies = Map<Container, Map<AnyToken, number>>;
 const runtimeDependencyParents = new WeakMap<
   RuntimeDependencies,
   RuntimeDependencies
@@ -365,10 +448,15 @@ type LifecycleState = "active" | "disposing-async" | "disposed";
 interface DisposalOperation {
   readonly owned: Set<Container>;
   readonly waits: Set<DisposalOperation>;
+  readonly nodeWaits: Map<Container, Set<Container>>;
   readonly errors: unknown[];
-  readonly stack: Container[];
   readonly tasks: Map<Container, Promise<void>>;
   readonly promise: Promise<void>;
+}
+
+interface DisposalContext {
+  readonly operation: DisposalOperation;
+  readonly path: readonly Container[];
 }
 
 interface SyncDisposalOperation {
@@ -394,12 +482,12 @@ interface LifetimeCaptor {
   readonly domain: Container;
 }
 
-interface ServiceMetadata {
+interface InjectableMetadata {
   readonly scope: Scope;
   readonly inject: readonly AnyDependency[] | undefined;
 }
 
-const serviceOptions = new WeakMap<ClassToken<any>, ServiceMetadata>();
+const injectableOptions = new WeakMap<ClassToken<any>, InjectableMetadata>();
 
 interface ResolutionContext {
   readonly container: Container;
@@ -413,7 +501,7 @@ interface ResolutionContext {
 }
 
 const resolutionContext = new AsyncLocalStorage<ResolutionContext>();
-const disposalContext = new AsyncLocalStorage<DisposalOperation>();
+const disposalContext = new AsyncLocalStorage<DisposalContext>();
 
 export function token<T>(description: string): InjectionToken<T> {
   return Symbol(description) as InjectionToken<T>;
@@ -443,10 +531,10 @@ export function lazy<T>(target: Token<T>): LazyDependency<T> {
   });
 }
 
-export function Service<
+export function Injectable<
   const TDependencies extends readonly Dependency<any>[],
 >(
-  options: ServiceOptionsWithInject<TDependencies>,
+  options: InjectableOptionsWithInject<TDependencies>,
 ): <
   TClass extends new (
     ...dependencies: DependencyValues<NoInfer<TDependencies>>
@@ -455,14 +543,16 @@ export function Service<
   value: TClass,
   context: ClassDecoratorContext<TClass>,
 ) => void;
-export function Service(options?: ServiceOptions): <TClass extends ClassToken<any>>(
-  value: TClass,
+export function Injectable(options?: InjectableOptions): <
+  const TClass extends ClassToken<any>,
+>(
+  value: TClass & InjectableDeclarationMatchesConstructor<NoInfer<TClass>>,
   context: ClassDecoratorContext<TClass>,
 ) => void;
-export function Service(
+export function Injectable(
   options:
-    | ServiceOptions
-    | ServiceOptionsWithInject<readonly AnyDependency[]> = {},
+    | InjectableOptions
+    | InjectableOptionsWithInject<readonly AnyDependency[]> = {},
 ) {
   const scope = checkedScope(options.scope, "transient");
 
@@ -475,7 +565,7 @@ export function Service(
         ? undefined
         : injectionDependencies(options.inject, value);
     context.addInitializer(function () {
-      serviceOptions.set(this, { scope, inject });
+      injectableOptions.set(this, { scope, inject });
     });
   };
 }
@@ -527,6 +617,7 @@ export class Container implements Disposable, AsyncDisposable {
   readonly #validatedAllAsync = new Set<AnyToken>();
   readonly #children = new Set<Container>();
   readonly #owned: OwnedResource[] = [];
+  readonly #ownedValues = new WeakSet<object>();
   readonly #inFlight = new Set<Promise<unknown>>();
   #parent: Container | undefined;
   #family: ContainerFamily = { activeResolutions: 0, mutating: false };
@@ -536,20 +627,40 @@ export class Container implements Disposable, AsyncDisposable {
   #disposalOperation: DisposalOperation | undefined;
   #syncDisposalOperation: SyncDisposalOperation | undefined;
 
-  register<T>(service: InjectableClass<T>): this;
-  register<T, const TDependencies extends readonly AnyDependency[] = readonly []>(
+  register<const TClass extends InjectableClass<any>>(
+    service: TClass & StaticInjectMatchesConstructor<NoInfer<TClass>>,
+  ): this;
+  register<T, const TClass extends InjectableClass<NonPromise<T>>>(
+    token: Token<T>,
+    provider: MetadataClassProvider<NoInfer<T>, TClass>,
+  ): this;
+  register<
+    T,
+    const TDependencies extends readonly AnyDependency[],
+  >(
     token: Token<T>,
     provider: ClassProvider<NoInfer<T>, TDependencies>,
   ): this;
   register<T>(token: Token<T>, provider: ValueProvider<NoInfer<T>>): this;
   register<T>(token: Token<T>, provider: ExistingProvider<NoInfer<T>>): this;
-  register<T, const TDependencies extends readonly AnyDependency[] = readonly []>(
+  register<
+    T,
+    const TDependencies extends readonly AnyDependency[],
+  >(
     token: Token<T>,
-    provider:
-      | FactoryProvider<NoInfer<T>, TDependencies>
-      | AsyncFactoryProvider<NoInfer<T>, TDependencies>,
+    provider: FactoryProvider<NoInfer<T>, TDependencies>,
   ): this;
-  register<T>(token: Token<T>, provider: Provider<NoInfer<T>>): this;
+  register<
+    T,
+    const TDependencies extends readonly AnyDependency[],
+  >(
+    token: Token<T>,
+    provider: AsyncFactoryProvider<NoInfer<T>, TDependencies>,
+  ): this;
+  register<T, const TProvider extends Provider<NoInfer<T>>>(
+    token: Token<T>,
+    provider: TProvider & ProviderMatchesDeclaration<NoInfer<TProvider>>,
+  ): this;
   register(token: AnyToken, provider?: AnyProvider): this {
     this.#assertMutable("register providers", token);
     assertToken(token);
@@ -571,9 +682,13 @@ export class Container implements Disposable, AsyncDisposable {
     });
   }
 
+  registerMulti<T, const TClass extends InjectableClass<NonPromise<T>>>(
+    token: Token<T>,
+    provider: MetadataClassProvider<NoInfer<T>, TClass>,
+  ): this;
   registerMulti<
     T,
-    const TDependencies extends readonly AnyDependency[] = readonly [],
+    const TDependencies extends readonly AnyDependency[],
   >(
     token: Token<T>,
     provider: ClassProvider<NoInfer<T>, TDependencies>,
@@ -582,14 +697,22 @@ export class Container implements Disposable, AsyncDisposable {
   registerMulti<T>(token: Token<T>, provider: ExistingProvider<NoInfer<T>>): this;
   registerMulti<
     T,
-    const TDependencies extends readonly AnyDependency[] = readonly [],
+    const TDependencies extends readonly AnyDependency[],
   >(
     token: Token<T>,
-    provider:
-      | FactoryProvider<NoInfer<T>, TDependencies>
-      | AsyncFactoryProvider<NoInfer<T>, TDependencies>,
+    provider: FactoryProvider<NoInfer<T>, TDependencies>,
   ): this;
-  registerMulti<T>(token: Token<T>, provider: Provider<NoInfer<T>>): this;
+  registerMulti<
+    T,
+    const TDependencies extends readonly AnyDependency[],
+  >(
+    token: Token<T>,
+    provider: AsyncFactoryProvider<NoInfer<T>, TDependencies>,
+  ): this;
+  registerMulti<T, const TProvider extends Provider<NoInfer<T>>>(
+    token: Token<T>,
+    provider: TProvider & ProviderMatchesDeclaration<NoInfer<TProvider>>,
+  ): this;
   registerMulti(token: AnyToken, provider: AnyProvider): this {
     this.#assertMutable("register providers", token);
     assertToken(token);
@@ -598,20 +721,40 @@ export class Container implements Disposable, AsyncDisposable {
     );
   }
 
-  rebind<T>(service: InjectableClass<T>): this;
-  rebind<T, const TDependencies extends readonly AnyDependency[] = readonly []>(
+  rebind<const TClass extends InjectableClass<any>>(
+    service: TClass & StaticInjectMatchesConstructor<NoInfer<TClass>>,
+  ): this;
+  rebind<T, const TClass extends InjectableClass<NonPromise<T>>>(
+    token: Token<T>,
+    provider: MetadataClassProvider<NoInfer<T>, TClass>,
+  ): this;
+  rebind<
+    T,
+    const TDependencies extends readonly AnyDependency[],
+  >(
     token: Token<T>,
     provider: ClassProvider<NoInfer<T>, TDependencies>,
   ): this;
   rebind<T>(token: Token<T>, provider: ValueProvider<NoInfer<T>>): this;
   rebind<T>(token: Token<T>, provider: ExistingProvider<NoInfer<T>>): this;
-  rebind<T, const TDependencies extends readonly AnyDependency[] = readonly []>(
+  rebind<
+    T,
+    const TDependencies extends readonly AnyDependency[],
+  >(
     token: Token<T>,
-    provider:
-      | FactoryProvider<NoInfer<T>, TDependencies>
-      | AsyncFactoryProvider<NoInfer<T>, TDependencies>,
+    provider: FactoryProvider<NoInfer<T>, TDependencies>,
   ): this;
-  rebind<T>(token: Token<T>, provider: Provider<NoInfer<T>>): this;
+  rebind<
+    T,
+    const TDependencies extends readonly AnyDependency[],
+  >(
+    token: Token<T>,
+    provider: AsyncFactoryProvider<NoInfer<T>, TDependencies>,
+  ): this;
+  rebind<T, const TProvider extends Provider<NoInfer<T>>>(
+    token: Token<T>,
+    provider: TProvider & ProviderMatchesDeclaration<NoInfer<TProvider>>,
+  ): this;
   rebind(token: AnyToken, provider?: AnyProvider): this {
     this.#assertMutable("rebind providers", token);
     assertToken(token);
@@ -637,15 +780,15 @@ export class Container implements Disposable, AsyncDisposable {
       }
 
       const registration: Registration = {
-      token,
-      owner: this,
-      provider: normalizeProvider(candidate, token),
+        token,
+        owner: this,
+        provider: normalizeProvider(candidate, token),
       };
       this.#registrations.set(token, {
         mode: "single",
         bindings: [registration],
       });
-      this.#invalidateForToken(token, true);
+      this.#invalidateForToken(token, true, true);
       return this;
     });
   }
@@ -655,7 +798,7 @@ export class Container implements Disposable, AsyncDisposable {
     assertToken(token);
     return this.#runMutation(() => {
       if (!this.#registrations.delete(token)) return false;
-      this.#invalidateForToken(token, true);
+      this.#invalidateForToken(token, true, true);
       return true;
     });
   }
@@ -702,6 +845,7 @@ export class Container implements Disposable, AsyncDisposable {
       }
       if (staging.#registrations.size === 0) return this;
 
+      const previousLocalTokens = new Set(this.#registrations.keys());
       const planned = new Map<AnyToken, BindingSet>();
       for (const [token, bindings] of this.#registrations) {
         planned.set(token, {
@@ -744,7 +888,11 @@ export class Container implements Disposable, AsyncDisposable {
         this.#registrations.set(token, bindings);
       }
       for (const token of staging.#registrations.keys()) {
-        this.#invalidateForToken(token, false);
+        this.#invalidateForToken(
+          token,
+          false,
+          previousLocalTokens.has(token),
+        );
       }
       return this;
     });
@@ -942,7 +1090,14 @@ export class Container implements Disposable, AsyncDisposable {
         [...context.path, token],
       );
     }
-    recordDynamicDependency(context?.collector, this, token);
+    recordDynamicDependency(
+      context?.collector,
+      this,
+      token,
+      options.own === true
+        ? RUNTIME_DEPENDENCY_HAS_OWN
+        : RUNTIME_DEPENDENCY_HAS,
+    );
     return options.own === true
       ? this.#registrations.has(token)
       : this.#lookup(token) !== undefined;
@@ -1079,26 +1234,37 @@ export class Container implements Disposable, AsyncDisposable {
   }
 
   disposeAsync(): Promise<void> {
-    const activeDisposal = disposalContext.getStore();
+    const activeDisposalContext = disposalContext.getStore();
+    const activeDisposal = activeDisposalContext?.operation;
     const providerContext = resolutionContext.getStore();
     const providerDisposal =
       providerContext?.active === true
         ? providerContext.container.#disposalOperation
         : undefined;
-    if (activeDisposal?.owned.has(this)) {
-      const current = activeDisposal.stack.at(-1);
+    if (
+      activeDisposal &&
+      activeDisposalContext &&
+      activeDisposal.owned.has(this)
+    ) {
+      const current = activeDisposalContext.path.at(-1);
       if (
         current === this ||
         (current !== undefined && this.#isAncestorOf(current))
       ) {
         return Promise.resolve();
       }
-      if (activeDisposal.stack.includes(this)) {
+      if (activeDisposalContext.path.includes(this)) {
         return Promise.reject(
           new TypeError("Circular disposal within one container tree."),
         );
       }
-      return this.#disposeAsyncNode(activeDisposal);
+      if (!current) return this.#disposeAsyncNode(activeDisposal);
+      return waitForDisposalNode(
+        activeDisposal,
+        current,
+        this,
+        () => this.#disposeAsyncNode(activeDisposal),
+      );
     }
     if (this.#lifecycle === "disposed") return Promise.resolve();
     if (this.#family.mutating) {
@@ -1145,15 +1311,15 @@ export class Container implements Disposable, AsyncDisposable {
     const operation: DisposalOperation = {
       owned: new Set(),
       waits: new Set(),
+      nodeWaits: new Map(),
       errors: [],
-      stack: [],
       tasks: new Map(),
       promise,
     };
     const foreign = new Set<DisposalOperation>();
     this.#freezeAsyncTree(operation, foreign);
 
-    const cleanup = disposalContext.run(operation, async () => {
+    const cleanup = disposalContext.run({ operation, path: [] }, async () => {
       await this.#waitForInFlight(operation.owned);
       for (const pending of foreign) {
         try {
@@ -1626,7 +1792,7 @@ export class Container implements Disposable, AsyncDisposable {
     if (parentCollector) {
       mergeRuntimeDependencies(parentCollector, collector);
     }
-    runtimeDependencyParents.delete(collector);
+    if (cache) runtimeDependencyParents.delete(collector);
     return instance as T;
   }
 
@@ -1730,59 +1896,74 @@ export class Container implements Disposable, AsyncDisposable {
       captor,
     );
     const construction = createConstruction(token, path);
+    const waitingConstruction = this.#activeContext()?.construction;
     if (!cache) {
-      return activation.#createOwnedAsync(
-        provider,
-        path,
-        session,
+      return waitForConstructionStart(
+        waitingConstruction,
         construction,
-        nextCaptor,
-        collector,
-      ).then((instance) => {
-        if (parentCollector) {
-          mergeRuntimeDependencies(parentCollector, collector);
-        }
-        return instance as T;
-      }).finally(() => runtimeDependencyParents.delete(collector));
+        () =>
+          activation.#createOwnedAsync(
+            provider,
+            path,
+            session,
+            construction,
+            nextCaptor,
+            collector,
+          ).then((instance) => {
+            if (parentCollector) {
+              mergeRuntimeDependencies(parentCollector, collector);
+            }
+            return instance as T;
+          }),
+      );
     }
 
-    let entry: CacheEntry;
-    const creation = Promise.resolve().then(() =>
-      activation.#createOwnedAsync(
-        provider,
-        path,
-        session,
-        construction,
-        nextCaptor,
-        collector,
-      ),
-    );
-    const tracked = creation
-      .then((instance) => {
-        cache.set(registration, {
-          state: "ready",
-          value: instance,
+    return waitForConstructionStart(
+      waitingConstruction,
+      construction,
+      () => {
+        let entry!: CacheEntry;
+        const creation = Promise.resolve().then(() =>
+          activation.#createOwnedAsync(
+            provider,
+            path,
+            session,
+            construction,
+            nextCaptor,
+            collector,
+          ),
+        );
+        const tracked = creation
+          .then((instance) => {
+            cache.set(registration, {
+              state: "ready",
+              value: instance,
+              dynamicDependencies: collector,
+            });
+            if (parentCollector) {
+              mergeRuntimeDependencies(parentCollector, collector);
+            }
+            return instance;
+          })
+          .finally(() => {
+            runtimeDependencyParents.delete(collector);
+            if (
+              cache.get(registration) === entry &&
+              entry.state === "pending"
+            ) {
+              cache.delete(registration);
+            }
+          });
+        entry = {
+          state: "pending",
+          promise: tracked,
+          producer: construction,
           dynamicDependencies: collector,
-        });
-        if (parentCollector) {
-          mergeRuntimeDependencies(parentCollector, collector);
-        }
-        return instance;
-      })
-      .finally(() => {
-        runtimeDependencyParents.delete(collector);
-        if (cache.get(registration) === entry && entry.state === "pending") {
-          cache.delete(registration);
-        }
-      });
-    entry = {
-      state: "pending",
-      promise: tracked,
-      producer: construction,
-      dynamicDependencies: collector,
-    };
-    cache.set(registration, entry);
-    return tracked as Promise<T>;
+        };
+        cache.set(registration, entry);
+        return tracked as Promise<T>;
+      },
+    );
   }
 
   #resolveDependencySync(
@@ -2006,7 +2187,7 @@ export class Container implements Disposable, AsyncDisposable {
     }
   }
 
-  async #createOwnedAsync(
+  #createOwnedAsync(
     provider: NormalizedProvider,
     path: readonly AnyToken[],
     session: ResolutionSession,
@@ -2014,35 +2195,44 @@ export class Container implements Disposable, AsyncDisposable {
     captor?: LifetimeCaptor,
     collector: RuntimeDependencies = new Map(),
   ): Promise<unknown> {
-    const instance = await this.#createAsync(
-      provider,
+    return this.#runAsyncProvider(
       path,
       session,
       construction,
       captor,
       collector,
+      async () => {
+        const instance = await this.#createAsync(
+          provider,
+          path,
+          session,
+          construction,
+          captor,
+          collector,
+        );
+        const token = path.at(-1)!;
+        try {
+          this.#runActivationHook(
+            provider,
+            token,
+            instance,
+            path,
+            session,
+            construction,
+            captor,
+            collector,
+          );
+        } catch (cause) {
+          this.#throwActivationFailure(instance, path, cause);
+        }
+        try {
+          this.#trackOwned(instance);
+        } catch (cause) {
+          throw providerFailure(path, cause);
+        }
+        return instance;
+      },
     );
-    const token = path.at(-1)!;
-    try {
-      this.#runActivationHook(
-        provider,
-        token,
-        instance,
-        path,
-        session,
-        construction,
-        captor,
-        collector,
-      );
-    } catch (cause) {
-      this.#throwActivationFailure(instance, path, cause);
-    }
-    try {
-      this.#trackOwned(instance);
-    } catch (cause) {
-      throw providerFailure(path, cause);
-    }
-    return instance;
   }
 
   #throwActivationFailure(
@@ -2176,7 +2366,7 @@ export class Container implements Disposable, AsyncDisposable {
     };
     if (existing) existing.bindings.push(registration);
     else this.#registrations.set(token, { mode, bindings: [registration] });
-    this.#invalidateForToken(token, false);
+    this.#invalidateForToken(token, false, existing !== undefined);
     return this;
   }
 
@@ -2227,8 +2417,21 @@ export class Container implements Disposable, AsyncDisposable {
     return false;
   }
 
-  #invalidateForToken(token: AnyToken, retireOwnBindings: boolean): void {
+  #invalidateForToken(
+    token: AnyToken,
+    retireOwnBindings: boolean,
+    previousLocalAvailable: boolean,
+  ): void {
     const mutationOwner = this;
+    const inheritedAvailable = this.#parent
+      ? this.#parent.#lookup(token) !== undefined
+      : false;
+    const currentLocalAvailable = this.#registrations.has(token);
+    const availabilityChanged =
+      (previousLocalAvailable || inheritedAvailable) !==
+      (currentLocalAvailable || inheritedAvailable);
+    const ownAvailabilityChanged =
+      previousLocalAvailable !== currentLocalAvailable;
     const visit = (container: Container): void => {
       const invalidate = (cache: Map<Registration, CacheEntry>): void => {
         for (const [registration, entry] of cache) {
@@ -2239,6 +2442,8 @@ export class Container implements Disposable, AsyncDisposable {
               token,
               mutationOwner,
               retireOwnBindings,
+              availabilityChanged,
+              ownAvailabilityChanged,
               entry.state === "ready"
                 ? entry.dynamicDependencies
                 : undefined,
@@ -2264,6 +2469,8 @@ export class Container implements Disposable, AsyncDisposable {
     token: AnyToken,
     mutationOwner: Container,
     retireOwnBindings: boolean,
+    availabilityChanged: boolean,
+    ownAvailabilityChanged: boolean,
     runtimeDependencies: RuntimeDependencies | undefined,
     visited: Map<Container, Set<Registration>>,
     root: boolean,
@@ -2309,6 +2516,8 @@ export class Container implements Disposable, AsyncDisposable {
             token,
             mutationOwner,
             retireOwnBindings,
+            availabilityChanged,
+            ownAvailabilityChanged,
             effectiveLookup.#cachedRuntimeDependencies(
               dependencyRegistration,
               effectiveLookup,
@@ -2322,13 +2531,34 @@ export class Container implements Disposable, AsyncDisposable {
       }
     }
     for (const [dynamicLookup, dependencies] of runtimeDependencies ?? []) {
-      for (const dependencyToken of dependencies) {
-        if (
-          dependencyToken === token &&
-          mutationOwner.#mutationVisibleFrom(dynamicLookup, token)
-        ) {
-          return true;
+      for (const [dependencyToken, modes] of dependencies) {
+        const mutationVisible = mutationOwner.#mutationVisibleFrom(
+          dynamicLookup,
+          token,
+        );
+        if (dependencyToken === token) {
+          if (
+            (modes & RUNTIME_DEPENDENCY_RESOLVE) !== 0 &&
+            mutationVisible
+          ) {
+            return true;
+          }
+          if (
+            (modes & RUNTIME_DEPENDENCY_HAS) !== 0 &&
+            availabilityChanged &&
+            mutationVisible
+          ) {
+            return true;
+          }
+          if (
+            (modes & RUNTIME_DEPENDENCY_HAS_OWN) !== 0 &&
+            ownAvailabilityChanged &&
+            mutationOwner === dynamicLookup
+          ) {
+            return true;
+          }
         }
+        if ((modes & RUNTIME_DEPENDENCY_RESOLVE) === 0) continue;
         const bindings = dynamicLookup.#lookup(dependencyToken);
         if (!bindings) continue;
         for (const dependencyRegistration of bindings.bindings) {
@@ -2339,6 +2569,8 @@ export class Container implements Disposable, AsyncDisposable {
               token,
               mutationOwner,
               retireOwnBindings,
+              availabilityChanged,
+              ownAvailabilityChanged,
               dynamicLookup.#cachedRuntimeDependencies(
                 dependencyRegistration,
                 dynamicLookup,
@@ -2406,9 +2638,14 @@ export class Container implements Disposable, AsyncDisposable {
     }
 
     const resource = value as object;
+    if (this.#ownedValues.has(resource)) return;
     const dispose: unknown = Reflect.get(resource, Symbol.dispose);
     const disposeAsync: unknown = Reflect.get(resource, Symbol.asyncDispose);
-    if (dispose !== undefined && dispose !== null || disposeAsync !== undefined && disposeAsync !== null) {
+    if (
+      (dispose !== undefined && dispose !== null) ||
+      (disposeAsync !== undefined && disposeAsync !== null)
+    ) {
+      this.#ownedValues.add(resource);
       this.#owned.push({ value: resource, dispose, disposeAsync });
     }
   }
@@ -2521,48 +2758,48 @@ export class Container implements Disposable, AsyncDisposable {
   #disposeAsyncNode(operation: DisposalOperation): Promise<void> {
     const existing = operation.tasks.get(this);
     if (existing) return existing;
-    const task = this.#runDisposeAsyncNode(operation);
+    const activeContext = disposalContext.getStore();
+    const path =
+      activeContext?.operation === operation ? activeContext.path : [];
+    const task = disposalContext.run(
+      { operation, path: [...path, this] },
+      () => this.#runDisposeAsyncNode(operation),
+    );
     operation.tasks.set(this, task);
     return task;
   }
 
   async #runDisposeAsyncNode(operation: DisposalOperation): Promise<void> {
-    operation.stack.push(this);
     const children = [...this.#children];
-    try {
-      for (let index = children.length - 1; index >= 0; index -= 1) {
-        const child = children[index]!;
-        if (operation.owned.has(child)) {
-          await child.#disposeAsyncNode(operation);
-        }
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      const child = children[index]!;
+      if (operation.owned.has(child)) {
+        await child.#disposeAsyncNode(operation);
       }
-
-      while (this.#owned.length > 0) {
-        const resource = this.#owned.pop()!;
-        try {
-          const disposeAsync = checkedDisposalMethod(
-            resource.disposeAsync,
-            Symbol.asyncDispose,
-          );
-          if (disposeAsync) {
-            await disposeAsync.call(resource.value);
-          } else {
-            const dispose = checkedDisposalMethod(
-              resource.dispose,
-              Symbol.dispose,
-            );
-            const result = dispose?.call(resource.value);
-            if (isPromiseLike(result)) consumeRejectedPromise(result);
-          }
-        } catch (error) {
-          appendDisposalError(operation.errors, error);
-        }
-      }
-      this.#finishDisposal();
-    } finally {
-      const index = operation.stack.lastIndexOf(this);
-      if (index !== -1) operation.stack.splice(index, 1);
     }
+
+    while (this.#owned.length > 0) {
+      const resource = this.#owned.pop()!;
+      try {
+        const disposeAsync = checkedDisposalMethod(
+          resource.disposeAsync,
+          Symbol.asyncDispose,
+        );
+        if (disposeAsync) {
+          await disposeAsync.call(resource.value);
+        } else {
+          const dispose = checkedDisposalMethod(
+            resource.dispose,
+            Symbol.dispose,
+          );
+          const result = dispose?.call(resource.value);
+          if (isPromiseLike(result)) consumeRejectedPromise(result);
+        }
+      } catch (error) {
+        appendDisposalError(operation.errors, error);
+      }
+    }
+    this.#finishDisposal();
   }
 
   #finishDisposal(): void {
@@ -2700,6 +2937,7 @@ function recordDynamicDependency(
   dependencies: RuntimeDependencies | undefined,
   lookup: Container,
   token: AnyToken,
+  mode = RUNTIME_DEPENDENCY_RESOLVE,
 ): void {
   for (
     let current = dependencies;
@@ -2708,10 +2946,10 @@ function recordDynamicDependency(
   ) {
     let tokens = current.get(lookup);
     if (!tokens) {
-      tokens = new Set();
+      tokens = new Map();
       current.set(lookup, tokens);
     }
-    tokens.add(token);
+    tokens.set(token, (tokens.get(token) ?? 0) | mode);
   }
 }
 
@@ -2725,15 +2963,17 @@ function createRuntimeCollector(
 
 function mergeRuntimeDependencies(
   target: RuntimeDependencies,
-  source: ReadonlyMap<Container, ReadonlySet<AnyToken>>,
+  source: ReadonlyMap<Container, ReadonlyMap<AnyToken, number>>,
 ): void {
   for (const [lookup, dependencies] of source) {
     let tokens = target.get(lookup);
     if (!tokens) {
-      tokens = new Set();
+      tokens = new Map();
       target.set(lookup, tokens);
     }
-    for (const token of dependencies) tokens.add(token);
+    for (const [token, mode] of dependencies) {
+      tokens.set(token, (tokens.get(token) ?? 0) | mode);
+    }
   }
 }
 
@@ -2742,7 +2982,15 @@ function waitForConstruction(
   producer: Construction,
   promise: Promise<unknown>,
 ): Promise<unknown> {
-  if (!current) return promise;
+  return waitForConstructionStart(current, producer, () => promise);
+}
+
+function waitForConstructionStart<T>(
+  current: Construction | undefined,
+  producer: Construction,
+  start: () => Promise<T>,
+): Promise<T> {
+  if (!current) return start();
 
   const waitPath = findConstructionPath(producer, current, new Set());
   if (waitPath) {
@@ -2757,6 +3005,15 @@ function waitForConstruction(
   }
 
   current.waits.set(producer, (current.waits.get(producer) ?? 0) + 1);
+  let promise: Promise<T>;
+  try {
+    promise = start();
+  } catch (error) {
+    const remaining = (current.waits.get(producer) ?? 1) - 1;
+    if (remaining === 0) current.waits.delete(producer);
+    else current.waits.set(producer, remaining);
+    throw error;
+  }
   return promise.finally(() => {
     const remaining = (current.waits.get(producer) ?? 1) - 1;
     if (remaining === 0) current.waits.delete(producer);
@@ -2886,17 +3143,41 @@ function normalizeProvider(
         registeredToken,
       );
     }
-    const metadata = inheritedServiceMetadata(provider.useClass);
+    const metadata = injectableOptions.get(provider.useClass);
+    const declaredDependencies =
+      provider.inject ?? metadata?.inject ?? provider.useClass.inject;
+    const inheritedDecoratorDependencies =
+      inheritedInjectableDependencies(provider.useClass);
+    if (
+      declaredDependencies === undefined &&
+      inheritedDecoratorDependencies !== undefined
+    ) {
+      throw registrationError(
+        "INVALID_PROVIDER",
+        `${tokenName(registeredToken)} must redeclare inherited decorator ` +
+          "dependencies for its own constructor.",
+        registeredToken,
+      );
+    }
+    if (declaredDependencies === undefined && provider.useClass.length > 0) {
+      throw registrationError(
+        "INVALID_PROVIDER",
+        `${tokenName(registeredToken)} has constructor parameters but no ` +
+          "injection declaration. Use @Injectable({ inject }), static inject, " +
+          "or provider.inject.",
+        registeredToken,
+      );
+    }
     return {
       kind: "class",
       useClass: provider.useClass,
       inject: injectionDependencies(
-        provider.inject ?? metadata?.inject ?? provider.useClass.inject,
+        declaredDependencies,
         provider.useClass,
       ),
       scope: checkedScope(
         provider.scope,
-        metadata?.scope ?? "transient",
+        inheritedInjectableScope(provider.useClass) ?? "transient",
         registeredToken,
       ),
       onActivation: checkedActivationHook(
@@ -2961,13 +3242,27 @@ function checkedActivationHook<T>(
   return hook;
 }
 
-function inheritedServiceMetadata(
+function inheritedInjectableScope(
   useClass: InjectableClass<any>,
-): ServiceMetadata | undefined {
+): Scope | undefined {
   let current: object | null = useClass;
   while (typeof current === "function") {
-    const options = serviceOptions.get(current as ClassToken<any>);
-    if (options) return options;
+    const options = injectableOptions.get(current as ClassToken<any>);
+    if (options) return options.scope;
+    current = Object.getPrototypeOf(current);
+  }
+  return undefined;
+}
+
+function inheritedInjectableDependencies(
+  useClass: InjectableClass<any>,
+): readonly AnyDependency[] | undefined {
+  let current: object | null = Object.getPrototypeOf(useClass);
+  while (typeof current === "function") {
+    const dependencies = injectableOptions.get(
+      current as ClassToken<any>,
+    )?.inject;
+    if (dependencies !== undefined) return dependencies;
     current = Object.getPrototypeOf(current);
   }
   return undefined;
@@ -3195,6 +3490,52 @@ function waitForDisposal(
   }
   current.waits.add(target);
   return target.promise.finally(() => current.waits.delete(target));
+}
+
+function waitForDisposalNode(
+  operation: DisposalOperation,
+  current: Container,
+  target: Container,
+  start: () => Promise<void>,
+): Promise<void> {
+  if (hasDisposalNodePath(operation, target, current, new Set())) {
+    return Promise.reject(
+      new TypeError("Circular disposal within one container tree."),
+    );
+  }
+  let waits = operation.nodeWaits.get(current);
+  if (!waits) {
+    waits = new Set();
+    operation.nodeWaits.set(current, waits);
+  }
+  waits.add(target);
+  let pending: Promise<void>;
+  try {
+    pending = start();
+  } catch (error) {
+    waits.delete(target);
+    if (waits.size === 0) operation.nodeWaits.delete(current);
+    return Promise.reject(error);
+  }
+  return pending.finally(() => {
+    waits.delete(target);
+    if (waits.size === 0) operation.nodeWaits.delete(current);
+  });
+}
+
+function hasDisposalNodePath(
+  operation: DisposalOperation,
+  current: Container,
+  target: Container,
+  visited: Set<Container>,
+): boolean {
+  if (current === target) return true;
+  if (visited.has(current)) return false;
+  visited.add(current);
+  for (const dependency of operation.nodeWaits.get(current) ?? []) {
+    if (hasDisposalNodePath(operation, dependency, target, visited)) return true;
+  }
+  return false;
 }
 
 function hasDisposalPath(

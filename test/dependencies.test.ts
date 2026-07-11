@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   Container,
   ResolutionError,
-  Service,
+  Injectable,
   all,
   lazy,
   optional,
@@ -185,7 +185,7 @@ describe("dependency descriptors", () => {
   test("supports typed decorator dependency metadata", () => {
     const VALUE = token<number>("VALUE");
 
-    @Service({ inject: [optional(VALUE)], scope: "singleton" })
+    @Injectable({ inject: [optional(VALUE)], scope: "singleton" })
     class Decorated {
       constructor(readonly value: number | undefined) {}
     }

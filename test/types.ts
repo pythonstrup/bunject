@@ -1,6 +1,6 @@
 import {
   Container,
-  Service,
+  Injectable,
   all,
   lazy,
   optional,
@@ -84,15 +84,79 @@ class NeedsDatabase {
   constructor(readonly database: Database) {}
 }
 const NEEDS_DATABASE = token<NeedsDatabase>("NEEDS_DATABASE");
+
+class StaticDependenciesMatch {
+  static inject = [DATABASE] as const;
+
+  constructor(readonly database: Database) {}
+}
+
+class StaticDependenciesMismatch {
+  static inject = [CACHE] as const;
+
+  constructor(readonly database: Database) {}
+}
+
+@Injectable({ inject: [DATABASE] })
+class DecoratedNeedsDatabase {
+  constructor(readonly database: Database) {}
+}
+
+const DECORATED_NEEDS_DATABASE = token<DecoratedNeedsDatabase>(
+  "DECORATED_NEEDS_DATABASE",
+);
+
+container.register(StaticDependenciesMatch);
+container.register(NEEDS_DATABASE, { useClass: StaticDependenciesMatch });
+container.register(DECORATED_NEEDS_DATABASE, {
+  scope: "singleton",
+  useClass: DecoratedNeedsDatabase,
+});
+
+// @ts-expect-error static inject must match constructor parameters
+container.register(StaticDependenciesMismatch);
+// @ts-expect-error metadata class providers validate static inject
+container.register(NEEDS_DATABASE, { useClass: StaticDependenciesMismatch });
+// @ts-expect-error multi metadata class providers validate static inject
+container.registerMulti(NEEDS_DATABASE, {
+  useClass: StaticDependenciesMismatch,
+});
+// @ts-expect-error rebind metadata class providers validate static inject
+container.rebind(NEEDS_DATABASE, { useClass: StaticDependenciesMismatch });
+
 container.register(NEEDS_DATABASE, {
   inject: [DATABASE],
   useClass: NeedsDatabase,
 });
 
+// @ts-expect-error explicit dependency tuples must match the constructor
 container.register(NEEDS_DATABASE, {
   inject: [CACHE],
-  // @ts-expect-error explicit dependency tuples must match the constructor
   useClass: NeedsDatabase,
+});
+
+container.register(NEEDS_DATABASE, {
+  inject: [CACHE],
+  // @ts-expect-error factory parameters must match the dependency tuple
+  useFactory: (database: Database) => new NeedsDatabase(database),
+});
+
+container.register(NEEDS_DATABASE, {
+  inject: [CACHE],
+  // @ts-expect-error async factory parameters must match the dependency tuple
+  useFactoryAsync: async (database: Database) => new NeedsDatabase(database),
+});
+
+container.registerMulti(NEEDS_DATABASE, {
+  inject: [CACHE],
+  // @ts-expect-error multi factory parameters must match the dependency tuple
+  useFactory: (database: Database) => new NeedsDatabase(database),
+});
+
+container.rebind(NEEDS_DATABASE, {
+  inject: [CACHE],
+  // @ts-expect-error rebound factory parameters must match the dependency tuple
+  useFactory: (database: Database) => new NeedsDatabase(database),
 });
 
 const PROMISE = token<Promise<number>>("PROMISE");
@@ -141,13 +205,25 @@ container.rebind(DATABASE, { useValue: new Database(), onActivation: () => {} })
 
 container.load((registry) => {
   registry.registerMulti(CACHE, { useValue: new Cache() });
+  registry.register(NEEDS_DATABASE, {
+    inject: [CACHE],
+    // @ts-expect-error module factory parameters must match the dependency tuple
+    useFactory: (database: Database) => new NeedsDatabase(database),
+  });
   // @ts-expect-error registration modules cannot escape to resolution APIs
   registry.resolve(CACHE);
 });
 
 // @ts-expect-error typed decorator dependencies must match the constructor
-@Service({ inject: [DATABASE] })
+@Injectable({ inject: [DATABASE] })
 class WrongDecoratedDependencies {
   constructor(_cache: Cache) {}
 }
 void WrongDecoratedDependencies;
+
+// @ts-expect-error required constructors need an injection declaration
+@Injectable()
+class MissingDecoratedDependencies {
+  constructor(_database: Database) {}
+}
+void MissingDecoratedDependencies;

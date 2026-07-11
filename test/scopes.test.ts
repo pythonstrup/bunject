@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { Container, ResolutionError, Service, lazy, token } from "../src/index";
+import {
+  Container,
+  Injectable,
+  ResolutionError,
+  lazy,
+  token,
+} from "../src/index";
 
 describe("container scopes", () => {
   test("falls back to parent providers and keeps overrides local", () => {
@@ -54,7 +60,7 @@ describe("container scopes", () => {
     const CONFIG = token<{ readonly name: string }>("CONFIG");
     const parentConfig = { name: "parent" };
 
-    @Service({ scope: "scoped" })
+    @Injectable({ scope: "scoped" })
     class ScopedService {
       static inject = [CONFIG] as const;
       constructor(readonly config: { readonly name: string }) {}
@@ -88,7 +94,7 @@ describe("container scopes", () => {
     expect(parentService.config).toBe(parentConfig);
   });
 
-  test("transient providers create a value for every request", () => {
+  test("transient providers create a value for every resolution", () => {
     const VALUE = token<object>("VALUE");
     const parent = new Container();
     parent.register(VALUE, {
@@ -102,7 +108,7 @@ describe("container scopes", () => {
   });
 
   test("resolution providers share one top-level graph only", () => {
-    @Service({ scope: "resolution" })
+    @Injectable({ scope: "resolution" })
     class PerResolution {}
 
     const ROOT = token<readonly [PerResolution, PerResolution]>("ROOT");

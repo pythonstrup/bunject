@@ -178,6 +178,94 @@ describe("container mutation", () => {
     expect(container.resolve(ROOT)).toBe(42);
   });
 
+  test("tracks own and inherited has queries by availability", () => {
+    const VALUE = token<number>("VALUE");
+    const OWN_ROOT = token<{ readonly available: boolean }>("OWN_ROOT");
+    const INHERITED_ROOT = token<{ readonly available: boolean }>(
+      "INHERITED_ROOT",
+    );
+    const parent = new Container();
+    const child = parent.createScope();
+    child.register(OWN_ROOT, {
+      scope: "singleton",
+      useFactory: () => ({ available: child.has(VALUE, { own: true }) }),
+    });
+    child.register(INHERITED_ROOT, {
+      scope: "singleton",
+      useFactory: () => ({ available: child.has(VALUE) }),
+    });
+
+    const missingOwn = child.resolve(OWN_ROOT);
+    const missingInherited = child.resolve(INHERITED_ROOT);
+    parent.register(VALUE, { useValue: 1 });
+
+    expect(child.resolve(OWN_ROOT)).toBe(missingOwn);
+    expect(missingOwn.available).toBe(false);
+    const inherited = child.resolve(INHERITED_ROOT);
+    expect(inherited).not.toBe(missingInherited);
+    expect(inherited.available).toBe(true);
+
+    parent.rebind(VALUE, { useValue: 2 });
+    expect(child.resolve(OWN_ROOT)).toBe(missingOwn);
+    expect(child.resolve(INHERITED_ROOT)).toBe(inherited);
+
+    child.register(VALUE, { useValue: 3 });
+    const localOwn = child.resolve(OWN_ROOT);
+    expect(localOwn).not.toBe(missingOwn);
+    expect(localOwn.available).toBe(true);
+    expect(child.resolve(INHERITED_ROOT)).toBe(inherited);
+
+    child.rebind(VALUE, { useValue: 4 });
+    expect(child.resolve(OWN_ROOT)).toBe(localOwn);
+    expect(child.resolve(INHERITED_ROOT)).toBe(inherited);
+
+    child.unregister(VALUE);
+    const fallbackOwn = child.resolve(OWN_ROOT);
+    expect(fallbackOwn).not.toBe(localOwn);
+    expect(fallbackOwn.available).toBe(false);
+    expect(child.resolve(INHERITED_ROOT)).toBe(inherited);
+
+    parent.unregister(VALUE);
+    expect(child.resolve(OWN_ROOT)).toBe(fallbackOwn);
+    const missingAgain = child.resolve(INHERITED_ROOT);
+    expect(missingAgain).not.toBe(inherited);
+    expect(missingAgain.available).toBe(false);
+  });
+
+  test("does not follow provider graphs for dynamic has queries", () => {
+    const DEPENDENCY = token<number>("DEPENDENCY");
+    const INNER = token<number>("INNER");
+    const ITEM = token<number>("ITEM");
+    const ROOT = token<object>("ROOT");
+    const MULTI_ROOT = token<object>("MULTI_ROOT");
+    const container = new Container();
+    container.register(INNER, { useValue: 1 });
+    container.register(DEPENDENCY, {
+      inject: [INNER],
+      useFactory: (value) => value,
+    });
+    container.registerMulti(ITEM, { useValue: 1 });
+    container.register(ROOT, {
+      scope: "singleton",
+      useFactory: () => ({ available: container.has(DEPENDENCY) }),
+    });
+    container.register(MULTI_ROOT, {
+      scope: "singleton",
+      useFactory: () => ({ available: container.has(ITEM) }),
+    });
+
+    const root = container.resolve(ROOT);
+    const multiRoot = container.resolve(MULTI_ROOT);
+    container.rebind(INNER, { useValue: 2 });
+    expect(container.resolve(ROOT)).toBe(root);
+
+    container.rebind(DEPENDENCY, { useValue: 3 });
+    expect(container.resolve(ROOT)).toBe(root);
+
+    container.registerMulti(ITEM, { useValue: 2 });
+    expect(container.resolve(MULTI_ROOT)).toBe(multiRoot);
+  });
+
   test("keeps runtime dependency edges isolated per scoped activation", () => {
     const VALUE = token<number>("VALUE");
     const ROOT = token<{ value?: number }>("ROOT");
@@ -248,6 +336,46 @@ describe("container mutation", () => {
     expect(container.resolve(ROOT)).toBe(1);
     container.rebind(VALUE, { useValue: 2 });
     expect(container.resolve(ROOT)).toBe(2);
+  });
+
+  test("propagates late runtime edges through a completed transient", async () => {
+    const VALUE = token<number>("VALUE");
+    const LATE = token<number>("LATE");
+    const BRIDGE = token<void>("BRIDGE");
+    const ROOT = token<{ readonly id: number }>("ROOT");
+    const container = new Container();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let pending!: Promise<number>;
+    let builds = 0;
+    container.register(VALUE, { useValue: 1 });
+    container.register(LATE, {
+      scope: "transient",
+      useFactoryAsync: async () => {
+        await gate;
+        return container.resolve(VALUE);
+      },
+    });
+    container.register(BRIDGE, {
+      scope: "transient",
+      useFactory: () => {
+        pending = container.resolveAsync(LATE);
+      },
+    });
+    container.register(ROOT, {
+      inject: [BRIDGE],
+      scope: "singleton",
+      useFactory: () => ({ id: ++builds }),
+    });
+
+    const first = container.resolve(ROOT);
+    release();
+    expect(await pending).toBe(1);
+    container.rebind(VALUE, { useValue: 2 });
+
+    expect(container.resolve(ROOT)).not.toBe(first);
   });
 
   test("propagates attempted runtime edges when nested resolution is caught", () => {

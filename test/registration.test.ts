@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   Container,
   RegistrationError,
-  Service,
+  Injectable,
   token,
   type Scope,
 } from "../src/index";
@@ -114,7 +114,49 @@ describe("registration validation", () => {
   });
 
   test("validates decorator options when the decorator is created", () => {
-    expect(() => Service({ scope: "request" as Scope })).toThrow(TypeError);
+    expect(() => Injectable({ scope: "request" as Scope })).toThrow(TypeError);
+  });
+
+  test("rejects required constructors without an injection declaration", () => {
+    class MissingDeclaration {
+      constructor(readonly value: object) {}
+    }
+    const VALUE = token<MissingDeclaration>("VALUE");
+    const container = new Container();
+
+    expect(() => container.register(MissingDeclaration)).toThrow(
+      expect.objectContaining({ code: "INVALID_PROVIDER" }),
+    );
+    expect(() =>
+      container.register(VALUE, { useClass: MissingDeclaration }),
+    ).toThrow(expect.objectContaining({ code: "INVALID_PROVIDER" }));
+  });
+
+  test("does not apply a base decorator tuple to a changed constructor", () => {
+    class Database {}
+    class Cache {}
+
+    @Injectable({ inject: [Database] })
+    class Base {
+      constructor(readonly database: Database) {}
+    }
+
+    class Derived extends Base {
+      constructor(readonly cache: Cache) {
+        super(new Database());
+      }
+    }
+
+    const container = new Container();
+    expect(() => container.register(Derived)).toThrow(
+      expect.objectContaining({ code: "INVALID_PROVIDER" }),
+    );
+    expect(() =>
+      container.register(Derived, {
+        inject: [Cache],
+        useClass: Derived,
+      }),
+    ).not.toThrow();
   });
 
   test("freezes a container family while async resolution is active", async () => {

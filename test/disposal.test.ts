@@ -65,6 +65,85 @@ describe("container disposal", () => {
     expect(factoryDisposals).toBe(2);
   });
 
+  test("owns one disposable identity once within a container", () => {
+    const FACTORY = token<Resource>("FACTORY");
+    const ALIAS = token<Resource>("ALIAS");
+    let disposals = 0;
+
+    class Resource implements Disposable {
+      [Symbol.dispose]() {
+        disposals += 1;
+      }
+    }
+
+    const container = new Container();
+    container.register(Resource, {
+      scope: "singleton",
+      useClass: Resource,
+    });
+    container.register(FACTORY, {
+      inject: [Resource],
+      scope: "singleton",
+      useFactory: (resource) => resource,
+    });
+    container.register(ALIAS, { useExisting: FACTORY });
+
+    expect(container.resolve(ALIAS)).toBe(container.resolve(Resource));
+    container.dispose();
+
+    expect(disposals).toBe(1);
+  });
+
+  test("owns a shared async factory result once", async () => {
+    const FIRST = token<AsyncDisposable>("FIRST");
+    const SECOND = token<AsyncDisposable>("SECOND");
+    let disposals = 0;
+    const resource = {
+      async [Symbol.asyncDispose]() {
+        disposals += 1;
+      },
+    };
+    const container = new Container();
+    container.register(FIRST, {
+      scope: "singleton",
+      useFactoryAsync: async () => resource,
+    });
+    container.register(SECOND, {
+      scope: "singleton",
+      useFactoryAsync: async () => resource,
+    });
+
+    await Promise.all([
+      container.resolveAsync(FIRST),
+      container.resolveAsync(SECOND),
+    ]);
+    await container.disposeAsync();
+
+    expect(disposals).toBe(1);
+  });
+
+  test("deduplicates ownership per container, not across scopes", () => {
+    const RESOURCE = token<Disposable>("RESOURCE");
+    let disposals = 0;
+    const resource = {
+      [Symbol.dispose]() {
+        disposals += 1;
+      },
+    };
+    const parent = new Container();
+    const child = parent.createScope();
+    parent.register(RESOURCE, { useFactory: () => resource });
+    child.register(RESOURCE, { useFactory: () => resource });
+
+    parent.resolve(RESOURCE);
+    child.resolve(RESOURCE);
+    child.dispose();
+    expect(disposals).toBe(1);
+
+    parent.dispose();
+    expect(disposals).toBe(2);
+  });
+
   test("disposes a dependency diamond in dependent-first LIFO order", () => {
     const DEPENDENCY = token<Disposable>("DEPENDENCY");
     const LEFT = token<Disposable>("LEFT");
@@ -438,6 +517,110 @@ describe("container disposal", () => {
     asyncSecond.resolve(SECOND);
     await asyncParent.disposeAsync();
     expect(asyncObserved).toBe(true);
+  });
+
+  test("allows an acyclic sibling wait across concurrent disposal tasks", async () => {
+    const RESOURCE = token<AsyncDisposable>("RESOURCE");
+    const parent = new Container();
+    const first = parent.createScope();
+    const second = parent.createScope();
+    const starter = parent.createScope();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let firstDone = false;
+    let observed = false;
+    first.register(RESOURCE, {
+      useFactory: () => ({
+        async [Symbol.asyncDispose]() {
+          await gate;
+          firstDone = true;
+        },
+      }),
+    });
+    second.register(RESOURCE, {
+      useFactory: () => ({
+        async [Symbol.asyncDispose]() {
+          await first.disposeAsync();
+          observed = firstDone;
+        },
+      }),
+    });
+    starter.register(RESOURCE, {
+      useFactory: () => ({
+        async [Symbol.asyncDispose]() {
+          const firstDisposal = first.disposeAsync();
+          const secondDisposal = second.disposeAsync();
+          release();
+          await Promise.all([firstDisposal, secondDisposal]);
+        },
+      }),
+    });
+    first.resolve(RESOURCE);
+    second.resolve(RESOURCE);
+    starter.resolve(RESOURCE);
+
+    await expect(parent.disposeAsync()).resolves.toBeUndefined();
+    expect(observed).toBe(true);
+  });
+
+  test("rejects a real cycle across concurrent sibling disposal tasks", async () => {
+    const RESOURCE = token<AsyncDisposable>("RESOURCE");
+    const parent = new Container();
+    const first = parent.createScope();
+    const second = parent.createScope();
+    const starter = parent.createScope();
+    let waiting = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const rendezvous = async (): Promise<void> => {
+      waiting += 1;
+      if (waiting === 2) release();
+      await gate;
+    };
+    first.register(RESOURCE, {
+      useFactory: () => ({
+        async [Symbol.asyncDispose]() {
+          await rendezvous();
+          await second.disposeAsync();
+        },
+      }),
+    });
+    second.register(RESOURCE, {
+      useFactory: () => ({
+        async [Symbol.asyncDispose]() {
+          await rendezvous();
+          await first.disposeAsync();
+        },
+      }),
+    });
+    starter.register(RESOURCE, {
+      useFactory: () => ({
+        async [Symbol.asyncDispose]() {
+          await Promise.all([first.disposeAsync(), second.disposeAsync()]);
+        },
+      }),
+    });
+    first.resolve(RESOURCE);
+    second.resolve(RESOURCE);
+    starter.resolve(RESOURCE);
+
+    const outcome = await Promise.race([
+      parent.disposeAsync().then(
+        () => "disposed" as const,
+        (error: unknown) => {
+          expect(error).toBeInstanceOf(AggregateError);
+          return "rejected" as const;
+        },
+      ),
+      Bun.sleep(100).then(() => "timeout" as const),
+    ]);
+
+    expect(outcome).toBe("rejected");
+    expect(parent.disposed).toBe(true);
   });
 
   test("joins an independently owned container already being disposed", async () => {

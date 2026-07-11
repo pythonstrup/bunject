@@ -6,7 +6,7 @@ no runtime dependencies, global container, legacy decorator requirement, or
 
 It provides explicit typed tokens, four lifetimes, child scopes, multi-binding,
 sync/async graph validation, deterministic resource disposal, and structured
-dependency errors. The implementation uses standard JavaScript APIs and the
+dependency errors. The runtime surface is Bun-first and Node-compatible; the
 compiled package also runs on modern Node.js and Deno.
 
 ## Install
@@ -39,7 +39,7 @@ Requirements:
 ## Quick start
 
 ```ts
-import { Container, Service, token } from "bunject";
+import { Container, Injectable, token } from "bunject";
 
 interface Database {
   query(sql: string): unknown;
@@ -47,12 +47,12 @@ interface Database {
 
 const DATABASE = token<Database>("DATABASE");
 
-@Service({ inject: [DATABASE], scope: "singleton" })
+@Injectable({ inject: [DATABASE], scope: "singleton" })
 class UserRepository {
   constructor(readonly database: Database) {}
 }
 
-@Service({ inject: [UserRepository] })
+@Injectable({ inject: [UserRepository] })
 class UserService {
   constructor(readonly users: UserRepository) {}
 }
@@ -67,10 +67,10 @@ container.register(UserService);
 const users = container.resolve(UserService);
 ```
 
-`@Service()` stores metadata only. Registration remains explicit, imports have
-no global side effects, and undecorated classes can also be registered. A class
-may use `static inject = [...] as const` instead of the decorator's `inject`
-option.
+`@Injectable()` stores metadata only. Registration remains explicit and imports
+have no global side effects. Zero-argument classes need no decorator; classes
+with constructor parameters must declare them through `@Injectable({ inject })`,
+provider `inject`, or `static inject = [...] as const`.
 
 ## Providers and lifetimes
 
@@ -98,11 +98,12 @@ singletons and aliases retain the target's identity.
 - `singleton`: one value in the registration owner
 - `scoped`: one value in each resolving container
 - `resolution`: one value in a top-level dependency graph
-- `transient`: a new value on every request
+- `transient`: a new owned value each time that binding is resolved
 
-Longer-lived providers cannot capture shorter-lived or descendant-owned
-values. Bunject checks declared, lazy, and dynamic resolution paths before the
-unsafe value becomes cached.
+Cached providers cannot capture scoped or resolution values with shorter
+lifetimes, or transient values resolved through a descendant-owned container.
+Bunject checks declared, lazy, and dynamic resolution paths before an unsafe
+value becomes cached.
 
 ## Child and request scopes
 
@@ -161,7 +162,11 @@ mutation dependency tracking.
 container.register(CLIENT, {
   useFactory: () => new Client(),
   onActivation: (client, { container, token }) => {
-    client.attach(container.resolve(LOGGER), token.description);
+    const name =
+      typeof token === "symbol"
+        ? token.description ?? token.toString()
+        : token.name;
+    client.attach(container.resolve(LOGGER), name);
   },
 });
 
@@ -218,6 +223,11 @@ Resolution path: UserController -> UserService -> UserRepository -> DATABASE
 - TypeScript does not emit constructor parameter types for standard
   decorators. Dependencies are therefore explicit and checked through
   decorator metadata, provider `inject`, or `static inject`.
+- Decorator dependency tuples are not inherited. A subclass with constructor
+  dependencies must redeclare them; decorator scope metadata may be inherited.
+- Keep authored provider objects inline or use `satisfies Provider<T>`.
+  Annotating a variable as the broad storage type `Provider<T>` erases the
+  exact dependency tuple that TypeScript needs for declaration checks.
 - Parameter decorators and automatic class registration are intentionally not
   provided.
 - Promise-like values are not service values. Wrap a Promise in an object or
@@ -230,10 +240,10 @@ Resolution path: UserController -> UserService -> UserRepository -> DATABASE
 
 ## Project status
 
-The repository enforces type, coverage, property, generated-graph,
-concurrency, packed-consumer, package-lint, size, and runtime-matrix checks.
+The repository defines type, coverage, property, generated-graph, concurrency,
+packed-consumer, package-lint, public-API, size, and runtime-matrix checks.
 The exact [production maturity criteria](./docs/maturity.md),
-[migration guides](./docs/migrations.md), [security policy](./docs/security.md),
+[migration guides](./docs/migrations.md), [security policy](./SECURITY.md),
 and [support policy](./docs/support.md) are public. Passing those gates is not a
 claim of ecosystem adoption or battle-testing; those require real users and
 time.
