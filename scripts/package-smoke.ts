@@ -1,5 +1,6 @@
 import {
   access,
+  copyFile,
   mkdir,
   mkdtemp,
   readdir,
@@ -90,6 +91,10 @@ try {
     root,
   );
   await mkdir(consumerDirectory);
+  await copyFile(
+    join(root, "scripts/runtime-smoke.mjs"),
+    join(consumerDirectory, "runtime-smoke.mjs"),
+  );
   await writeFile(
     join(consumerDirectory, "package.json"),
     `${JSON.stringify(
@@ -108,6 +113,7 @@ try {
 
 const VALUE = token<number>("VALUE");
 const DOUBLE = token<number>("DOUBLE");
+const MISSING = token<number>("MISSING");
 
 @Injectable({ scope: "singleton" })
 class Application {
@@ -126,7 +132,9 @@ const first = container.resolve(Application);
 if (
   first.value !== 42 ||
   first !== container.resolve(Application) ||
-  container.resolve(DOUBLE) !== 84
+  container.resolve(DOUBLE) !== 84 ||
+  container.resolveOptional(MISSING) !== undefined ||
+  await container.resolveOptionalAsync(MISSING) !== undefined
 ) {
   throw new Error("Bun package consumer smoke test failed");
 }
@@ -134,20 +142,10 @@ if (
   );
   await writeFile(
     join(consumerDirectory, "node-consumer.mjs"),
-    `import { Container, token } from "bunject";
+    `import * as bunject from "bunject";
+import { runRuntimeSmoke } from "./runtime-smoke.mjs";
 
-const VALUE = token("VALUE");
-class Application {
-  static inject = [VALUE];
-  constructor(value) { this.value = value; }
-}
-
-const container = new Container();
-container.register(VALUE, { useValue: 42 });
-container.register(Application);
-if (container.resolve(Application).value !== 42) {
-  throw new Error("Node package consumer smoke test failed");
-}
+await runRuntimeSmoke(bunject);
 `,
   );
   await writeFile(
@@ -191,10 +189,11 @@ if (container.resolve(Application).value !== 42) {
     consumerDirectory,
   );
   await run(["bun", "run", "bun-consumer.ts"], consumerDirectory);
+  await run(["bun", "run", "node-consumer.mjs"], consumerDirectory);
   await run(["node", "out/bun-consumer.js"], consumerDirectory);
   await run(["node", "node-consumer.mjs"], consumerDirectory);
   console.log(
-    "npm-packed consumer smoke passed in Bun, emitted decorators, and Node.",
+    "npm-packed sync/async consumer smoke passed in Bun and Node.",
   );
 } finally {
   await rm(temporaryDirectory, { recursive: true, force: true });

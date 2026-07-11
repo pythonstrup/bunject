@@ -4,22 +4,29 @@ declare const injectionTokenType: unique symbol;
 declare const definedProviderType: unique symbol;
 const dependencyDescriptorType = Symbol("bunject.dependency");
 
+/** Activation lifetime for class and factory providers. */
 export type Scope = "singleton" | "scoped" | "resolution" | "transient";
 
+/** Concrete constructor that produces `T`. */
 export type Constructor<T = unknown> = new (...dependencies: any[]) => T;
 
+/** Abstract or concrete class usable as a token for `T`. */
 export type ClassToken<T = unknown> = abstract new (
   ...dependencies: any[]
 ) => T;
 
+/** Invariant symbol token carrying service type `T`. */
 export type InjectionToken<T> = symbol & {
   readonly [injectionTokenType]: (value: T) => T;
 };
 
+/** Class or typed-symbol identity for a service. */
 export type Token<T> = ClassToken<T> | InjectionToken<T>;
 
+/** Excludes Promise-like service values from synchronous provider contracts. */
 export type NonPromise<T> = T extends PromiseLike<unknown> ? never : T;
 
+/** Extracts the service type carried by a token. */
 export type TokenValue<TToken extends Token<any>> =
   TToken extends ClassToken<infer TValue>
     ? TValue
@@ -27,42 +34,61 @@ export type TokenValue<TToken extends Token<any>> =
       ? TValue
       : never;
 
+/** Frozen descriptor for an optional constructor/factory dependency. */
 export interface OptionalDependency<T> {
   readonly [dependencyDescriptorType]: "optional";
   readonly token: Token<T>;
 }
 
+/** Frozen descriptor for every binding in the nearest visible set. */
 export interface AllDependency<T> {
   readonly [dependencyDescriptorType]: "all";
   readonly token: Token<T>;
 }
 
+/** Frozen descriptor for deferred resolution of one token. */
 export interface LazyDependency<T> {
   readonly [dependencyDescriptorType]: "lazy";
   readonly token: Token<T>;
 }
 
+/** Frozen descriptor that injects a Resolver bound to the activation container. */
 export interface ResolverDependency {
   readonly [dependencyDescriptorType]: "resolver";
 }
 
+/** Deferred sync/async lookup for a single target token. */
 export interface Lazy<T> {
+  /** Resolves the deferred target synchronously. */
   readonly resolve: () => T;
+  /** Resolves the deferred target through the async graph path. */
   readonly resolveAsync: () => Promise<T>;
 }
 
-/** Read-only access to the provider's activation container. */
+/** Registration-query and resolution access bound to the activation container. */
 export interface Resolver {
+  /** Tests registration availability without construction. */
   readonly has: <T>(
     token: Token<T>,
     options?: RegistrationQueryOptions,
   ) => boolean;
+  /** Resolves one required provider synchronously. */
   readonly resolve: <T>(token: Token<T>) => T;
+  /** Returns `undefined` when absent; otherwise resolves synchronously. */
+  readonly resolveOptional: <T>(token: Token<T>) => T | undefined;
+  /** Resolves one required provider through the async graph path. */
   readonly resolveAsync: <T>(token: Token<T>) => Promise<T>;
+  /** Returns `undefined` when absent; otherwise resolves asynchronously. */
+  readonly resolveOptionalAsync: <T>(
+    token: Token<T>,
+  ) => Promise<T | undefined>;
+  /** Resolves the nearest complete binding set synchronously. */
   readonly resolveAll: <T>(token: Token<T>) => readonly T[];
+  /** Resolves the nearest complete binding set asynchronously. */
   readonly resolveAllAsync: <T>(token: Token<T>) => Promise<readonly T[]>;
 }
 
+/** Token or descriptor accepted in an explicit injection tuple. */
 export type Dependency<T = any> =
   | Token<T>
   | OptionalDependency<T>
@@ -70,6 +96,7 @@ export type Dependency<T = any> =
   | LazyDependency<T>
   | ResolverDependency;
 
+/** Maps one dependency declaration to its injected runtime value. */
 export type DependencyValue<TDependency extends Dependency<any>> =
   TDependency extends ResolverDependency
     ? Resolver
@@ -83,15 +110,18 @@ export type DependencyValue<TDependency extends Dependency<any>> =
             ? TokenValue<TDependency>
             : never;
 
+/** Maps an injection tuple to mutable constructor/factory parameters. */
 export type DependencyValues<TDependencies extends readonly Dependency<any>[]> = {
   -readonly [TIndex in keyof TDependencies]: DependencyValue<
     TDependencies[TIndex]
   >;
 };
 
+/** Maps a tuple of direct tokens to their service values. */
 export type TokenValues<TTokens extends readonly Token<any>[]> =
   DependencyValues<TTokens>;
 
+/** Concrete service class with an optional explicit static dependency tuple. */
 export type InjectableClass<T = unknown> = Constructor<T> & {
   readonly inject?: readonly Dependency<any>[];
 };
@@ -131,11 +161,13 @@ type ProviderMatchesDeclaration<TProvider> =
       ? StaticInjectMatchesConstructor<TClass>
       : unknown;
 
+/** Scope-only `@Injectable()` options without a decorator dependency tuple. */
 export interface InjectableOptions {
   readonly scope?: Scope;
   readonly inject?: never;
 }
 
+/** Decorator options carrying an exact constructor dependency tuple. */
 export interface InjectableOptionsWithInject<
   TDependencies extends readonly Dependency<any>[],
 > {
@@ -143,40 +175,48 @@ export interface InjectableOptionsWithInject<
   readonly inject: TDependencies;
 }
 
+/** Selects sync/async and single/all graph preflight semantics. */
 export interface ValidationOptions {
   readonly async?: boolean;
   readonly all?: boolean;
 }
 
+/** Controls inherited versus local-only registration queries. */
 export interface RegistrationQueryOptions {
   readonly own?: boolean;
 }
 
+/** Frozen context passed to a provider activation hook. */
 export interface ActivationContext<T> {
   readonly container: Container;
   readonly token: Token<T>;
 }
 
+/** Synchronous post-construction hook; returning a value is forbidden. */
 export type ActivationHook<T> = (
   value: T,
   context: ActivationContext<T>,
 ) => undefined;
 
+/** Frozen ownership context passed to provider cleanup hooks. */
 export interface DisposalContext<T> {
   readonly container: Container;
   readonly token: Token<T>;
 }
 
+/** Synchronous provider cleanup adapter. */
 export type DisposalHook<T> = (
   value: T,
   context: DisposalContext<T>,
 ) => undefined;
 
+/** Asynchronous provider cleanup adapter. */
 export type AsyncDisposalHook<T> = (
   value: T,
   context: DisposalContext<T>,
 ) => PromiseLike<void>;
 
+/** Normalized provider kind reported by graph inspection. */
 export type ProviderKind =
   | "class"
   | "value"
@@ -184,6 +224,7 @@ export type ProviderKind =
   | "asyncFactory"
   | "existing";
 
+/** Dependency edge kind reported by graph inspection. */
 export type DependencyKind =
   | "required"
   | "optional"
@@ -191,6 +232,7 @@ export type DependencyKind =
   | "lazy"
   | "resolver";
 
+/** Frozen dependency edge in an inspected graph. */
 export type InspectedDependency =
   | {
       readonly token: Token<any>;
@@ -201,6 +243,7 @@ export type InspectedDependency =
       readonly kind: "resolver";
     };
 
+/** Frozen provider node in an inspected graph. */
 export interface InspectedProvider {
   readonly token: Token<any>;
   readonly binding: number;
@@ -211,12 +254,14 @@ export interface InspectedProvider {
   readonly dependencies: readonly InspectedDependency[];
 }
 
+/** Frozen, construction-free view of a token's declared dependency graph. */
 export interface DependencyGraph {
   readonly root: Token<any>;
   readonly providers: readonly InspectedProvider[];
   readonly missing: readonly Token<any>[];
 }
 
+/** Restricted registration surface exposed inside an atomic module. */
 export interface RegistrationRegistry {
   /** Adds one staged single binding and returns this registry. */
   register<const TClass extends InjectableClass<any>>(
@@ -298,6 +343,7 @@ export type RegistrationModule = (
   registry: RegistrationRegistry,
 ) => undefined;
 
+/** Constructs a service class with an explicit or class-owned dependency tuple. */
 export interface ClassProvider<
   T,
   TDependencies extends readonly Dependency<any>[] = readonly Dependency<any>[],
@@ -329,6 +375,7 @@ type MetadataClassProvider<
   readonly inject?: never;
 };
 
+/** Registers a borrowed non-Promise value. */
 export interface ValueProvider<T> {
   readonly useValue: NonPromise<T>;
   readonly scope?: never;
@@ -342,6 +389,7 @@ export interface ValueProvider<T> {
   readonly onDisposalAsync?: never;
 }
 
+/** Creates a service synchronously from an explicit dependency tuple. */
 export interface FactoryProvider<
   T,
   TDependencies extends readonly Dependency<any>[] = readonly Dependency<any>[],
@@ -360,6 +408,7 @@ export interface FactoryProvider<
   readonly useExisting?: never;
 }
 
+/** Creates a service asynchronously from an explicit dependency tuple. */
 export interface AsyncFactoryProvider<
   T,
   TDependencies extends readonly Dependency<any>[] = readonly Dependency<any>[],
@@ -378,6 +427,7 @@ export interface AsyncFactoryProvider<
   readonly useExisting?: never;
 }
 
+/** Aliases another token without taking separate ownership. */
 export interface ExistingProvider<T> {
   readonly useExisting: Token<T>;
   readonly scope?: never;
@@ -391,6 +441,7 @@ export interface ExistingProvider<T> {
   readonly onDisposalAsync?: never;
 }
 
+/** Union of every provider registration form for service `T`. */
 export type Provider<T> =
   | ClassProvider<T>
   | MetadataClassProvider<T>
@@ -439,6 +490,7 @@ interface ProviderBuilder<T> {
   >;
 }
 
+/** Stable machine-readable resolution failure category. */
 export type ResolutionErrorCode =
   | "NOT_FOUND"
   | "MULTIPLE_PROVIDERS"
@@ -449,6 +501,7 @@ export type ResolutionErrorCode =
   | "DISPOSED"
   | "PROVIDER_FAILED";
 
+/** Stable machine-readable registration failure category. */
 export type RegistrationErrorCode =
   | "INVALID_TOKEN"
   | "INVALID_PROVIDER"
@@ -621,7 +674,7 @@ export function token<T>(description: string): InjectionToken<T> {
   return Symbol(description) as InjectionToken<T>;
 }
 
-/** Declares an optional dependency that yields `undefined` only when absent. */
+/** Declares a dependency whose absence is represented by `undefined`. */
 export function optional<T>(target: Token<T>): OptionalDependency<T> {
   assertToken(target);
   return Object.freeze({
@@ -697,7 +750,7 @@ export function defineProvider(provider?: unknown): unknown {
     : provider;
 }
 
-/** Stores standard-decorator injection metadata without registering globally. */
+/** Stores standard-decorator scope/injection metadata without global registration. */
 export function Injectable<
   const TDependencies extends readonly Dependency<any>[],
 >(
@@ -743,6 +796,7 @@ export class ResolutionError extends Error {
   readonly path: readonly AnyToken[];
   readonly cycle: readonly AnyToken[] | undefined;
 
+  /** Creates a structured resolution failure. */
   constructor(
     code: ResolutionErrorCode,
     message: string,
@@ -763,6 +817,7 @@ export class RegistrationError extends TypeError {
   readonly code: RegistrationErrorCode;
   readonly token: AnyToken | undefined;
 
+  /** Creates a structured registration failure. */
   constructor(
     code: RegistrationErrorCode,
     message: string,
@@ -776,7 +831,7 @@ export class RegistrationError extends TypeError {
   }
 }
 
-/** An isolated registration, resolution, scope, and resource-ownership domain. */
+/** Registration and ownership domain that may inherit from a parent container. */
 export class Container implements Disposable, AsyncDisposable {
   readonly #registrations = new Map<AnyToken, BindingSet>();
   readonly #singletonCache = new Map<Registration, CacheEntry>();
@@ -1091,15 +1146,30 @@ export class Container implements Disposable, AsyncDisposable {
     });
   }
 
-  /** Resolves one provider synchronously after full graph preflight. */
+  /** Resolves one provider synchronously after eager-graph preflight. */
   resolve<T>(token: Token<T>): T {
     return this.#resolvePublicSync(token);
+  }
+
+  /** Returns `undefined` when absent; otherwise resolves synchronously. */
+  resolveOptional<T>(token: Token<T>): T | undefined {
+    return this.#resolvePublicSync(token, undefined, true);
   }
 
   #resolvePublicSync<T>(
     token: Token<T>,
     capturedCaptor?: LifetimeCaptor,
-  ): T {
+  ): T;
+  #resolvePublicSync<T>(
+    token: Token<T>,
+    capturedCaptor: LifetimeCaptor | undefined,
+    optional: true,
+  ): T | undefined;
+  #resolvePublicSync<T>(
+    token: Token<T>,
+    capturedCaptor?: LifetimeCaptor,
+    optional = false,
+  ): T | undefined {
     assertToken(token);
     this.#assertCanResolve(token);
     const context = this.#activeContext();
@@ -1111,6 +1181,7 @@ export class Container implements Disposable, AsyncDisposable {
     const ancestry = context?.path ?? [];
     const locked = this.#beginResolution();
     try {
+      if (optional && !this.#lookup(token)) return undefined;
       if (captors.length === 0) {
         this.#validateGraph(token, true, false, undefined, ancestry);
       }
@@ -1136,10 +1207,25 @@ export class Container implements Disposable, AsyncDisposable {
     return this.#resolvePublicAsync(token);
   }
 
+  /** Returns `undefined` when absent; otherwise resolves asynchronously. */
+  resolveOptionalAsync<T>(token: Token<T>): Promise<T | undefined> {
+    return this.#resolvePublicAsync(token, undefined, true);
+  }
+
   #resolvePublicAsync<T>(
     token: Token<T>,
     capturedCaptor?: LifetimeCaptor,
-  ): Promise<T> {
+  ): Promise<T>;
+  #resolvePublicAsync<T>(
+    token: Token<T>,
+    capturedCaptor: LifetimeCaptor | undefined,
+    optional: true,
+  ): Promise<T | undefined>;
+  #resolvePublicAsync<T>(
+    token: Token<T>,
+    capturedCaptor?: LifetimeCaptor,
+    optional = false,
+  ): Promise<T | undefined> {
     let context: ResolutionContext | undefined;
     try {
       assertToken(token);
@@ -1154,7 +1240,13 @@ export class Container implements Disposable, AsyncDisposable {
     const captor = strongerCaptor(context?.captor, capturedCaptor);
     const captors = captorConstraints(context?.captor, capturedCaptor);
     return this.#trackInFlight(
-      this.#resolveAsyncPublic(token, captor, captors, context?.collector),
+      this.#resolveAsyncPublic(
+        token,
+        captor,
+        captors,
+        context?.collector,
+        optional,
+      ),
     );
   }
 
@@ -1163,12 +1255,14 @@ export class Container implements Disposable, AsyncDisposable {
     captor?: LifetimeCaptor,
     captors: readonly LifetimeCaptor[] = captor ? [captor] : [],
     collector?: RuntimeDependencies,
-  ): Promise<T> {
+    optional = false,
+  ): Promise<T | undefined> {
     const context = this.#activeContext();
     const session = context?.session ?? createResolutionSession();
     const ancestry = context?.path ?? [];
     const locked = this.#beginResolution();
     try {
+      if (optional && !this.#lookup(token)) return undefined;
       if (captors.length === 0) {
         this.#validateGraph(token, false, false, undefined, ancestry);
       }
@@ -1586,10 +1680,12 @@ export class Container implements Disposable, AsyncDisposable {
       : promise;
   }
 
+  /** Delegates explicit resource management to `dispose()`. */
   [Symbol.dispose](): void {
     this.dispose();
   }
 
+  /** Delegates async explicit resource management to `disposeAsync()`. */
   [Symbol.asyncDispose](): Promise<void> {
     return this.disposeAsync();
   }
@@ -2299,8 +2395,12 @@ export class Container implements Disposable, AsyncDisposable {
         return this.has(target, options);
       },
       resolve: <T>(target: Token<T>) => this.#resolvePublicSync(target, captor),
+      resolveOptional: <T>(target: Token<T>) =>
+        this.#resolvePublicSync(target, captor, true),
       resolveAsync: <T>(target: Token<T>) =>
         this.#resolvePublicAsync(target, captor),
+      resolveOptionalAsync: <T>(target: Token<T>) =>
+        this.#resolvePublicAsync(target, captor, true),
       resolveAll: <T>(target: Token<T>) =>
         this.#resolveAllPublicSync(target, captor),
       resolveAllAsync: <T>(target: Token<T>) =>
@@ -3510,10 +3610,10 @@ function normalizeProvider(
   }
 
   if ("useClass" in provider) {
-    if (typeof provider.useClass !== "function") {
+    if (!isConstructible(provider.useClass)) {
       throw registrationError(
         "INVALID_PROVIDER",
-        `useClass for ${tokenName(registeredToken)} must be a class.`,
+        `useClass for ${tokenName(registeredToken)} must be constructible.`,
         registeredToken,
       );
     }
@@ -3636,6 +3736,16 @@ function normalizeProvider(
   };
 }
 
+function isConstructible(value: unknown): value is InjectableClass<any> {
+  if (typeof value !== "function") return false;
+  try {
+    Reflect.construct(Object, [], value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function checkedActivationHook<T>(
   hook: ActivationHook<T> | undefined,
   token: AnyToken,
@@ -3755,7 +3865,7 @@ function checkedScope(
 }
 
 function assertToken(value: unknown, owner?: AnyToken): asserts value is AnyToken {
-  if (typeof value !== "function" && typeof value !== "symbol") {
+  if (typeof value !== "symbol" && !isConstructible(value)) {
     throw registrationError(
       "INVALID_TOKEN",
       owner

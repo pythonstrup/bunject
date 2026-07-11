@@ -23,7 +23,7 @@ Requirements:
 
 - Bun 1.3.10 or newer
 - Node.js 22 or newer when using the compiled package outside Bun
-- Deno 2 when using its Node compatibility layer
+- Deno 2.0.0 or newer when using its Node compatibility layer
 - TypeScript 5.4 or newer
 - standard decorators; do not enable `experimentalDecorators` or
   `emitDecoratorMetadata`
@@ -159,9 +159,10 @@ container.register(APPLICATION, {
 const hooks = container.resolveAll(HOOK);
 ```
 
-`optional(T)` returns `undefined` only when `T` is absent. `all(T)` returns the
-nearest complete binding set, including an empty array. `lazy(T)` returns a
-frozen `{ resolve, resolveAsync }` handle, defers construction and missing-token
+`optional(T)` represents an absent binding as `undefined` without swallowing
+errors from a visible provider. `all(T)` returns the nearest complete binding
+set, including an empty array. `lazy(T)` returns a frozen
+`{ resolve, resolveAsync }` handle, defers construction and missing-token
 validation, and retains the lifetime constraints of its owner.
 
 Use `resolver()` when a provider must choose tokens dynamically or resolve a
@@ -175,8 +176,8 @@ container.register(REPORT_FACTORY, {
 });
 ```
 
-The injected `Resolver` is a frozen, read-only surface with `has`, `resolve`,
-`resolveAsync`, `resolveAll`, and `resolveAllAsync`. It is bound to the
+The injected `Resolver` is a frozen, read-only surface with `has`, required and
+optional sync/async resolution, and multi-resolution. It is bound to the
 provider's activation container: a scoped provider activated in a child sees
 that child, while a parent singleton remains owner-affine.
 
@@ -192,11 +193,17 @@ container. A local set shadows the complete parent set.
 
 ```ts
 const service = container.resolve(SYNC_SERVICE);
+const cache = container.resolveOptional(CACHE);
 const application = await container.resolveAsync(APPLICATION);
+const metrics = await container.resolveOptionalAsync(METRICS);
 ```
 
 The APIs are deliberately separate. `resolve()` preflights the complete
 declared graph and rejects an async provider before construction starts.
+`resolveOptional()` and `resolveOptionalAsync()` return `undefined` when no
+binding is visible without translating ambiguity or provider failures. A
+registered provider may itself produce `undefined`; call `has()` first when
+`T` includes `undefined` and presence must be distinguished.
 Concurrent async requests coalesce each cached provider. Dynamic calls made by
 factories retain the active path, lifetime constraint, cycle detection, and
 mutation dependency tracking.

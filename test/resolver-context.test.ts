@@ -99,6 +99,67 @@ describe("resolver dependency", () => {
     expect(activeResolver.has(OPTIONAL, { own: true })).toBe(true);
   });
 
+  test("resolves optional dynamic targets and tracks absence", async () => {
+    const OPTIONAL = token<number>("OPTIONAL");
+    const SNAPSHOT = token<{ readonly value: number | undefined }>("SNAPSHOT");
+    const ASYNC_SNAPSHOT = token<{ readonly value: number | undefined }>(
+      "ASYNC_SNAPSHOT",
+    );
+    const DEFERRED = token<() => number | undefined>("DEFERRED");
+    const DEFERRED_ASYNC = token<() => Promise<number | undefined>>(
+      "DEFERRED_ASYNC",
+    );
+    const container = new Container();
+    container.register(SNAPSHOT, {
+      inject: [resolver()],
+      scope: "singleton",
+      useFactory: (activeResolver) => ({
+        value: activeResolver.resolveOptional(OPTIONAL),
+      }),
+    });
+    container.register(ASYNC_SNAPSHOT, {
+      inject: [resolver()],
+      scope: "singleton",
+      useFactoryAsync: async (activeResolver) => ({
+        value: await activeResolver.resolveOptionalAsync(OPTIONAL),
+      }),
+    });
+    container.register(DEFERRED, {
+      inject: [resolver()],
+      scope: "singleton",
+      useFactory: (activeResolver) => () =>
+        activeResolver.resolveOptional(OPTIONAL),
+    });
+    container.register(DEFERRED_ASYNC, {
+      inject: [resolver()],
+      scope: "singleton",
+      useFactory: (activeResolver) => () =>
+        activeResolver.resolveOptionalAsync(OPTIONAL),
+    });
+
+    const missing = container.resolve(SNAPSHOT);
+    const missingAsync = await container.resolveAsync(ASYNC_SNAPSHOT);
+    const deferred = container.resolve(DEFERRED);
+    const deferredAsync = container.resolve(DEFERRED_ASYNC);
+    expect(missing.value).toBeUndefined();
+    expect(missingAsync.value).toBeUndefined();
+    expect(deferred()).toBeUndefined();
+    await expect(deferredAsync()).resolves.toBeUndefined();
+
+    container.register(OPTIONAL, { useValue: 42 });
+
+    const present = container.resolve(SNAPSHOT);
+    const presentAsync = await container.resolveAsync(ASYNC_SNAPSHOT);
+    expect(present).not.toBe(missing);
+    expect(presentAsync).not.toBe(missingAsync);
+    expect(present.value).toBe(42);
+    expect(presentAsync.value).toBe(42);
+    expect(container.resolve(DEFERRED)).toBe(deferred);
+    expect(container.resolve(DEFERRED_ASYNC)).toBe(deferredAsync);
+    expect(deferred()).toBe(42);
+    await expect(deferredAsync()).resolves.toBe(42);
+  });
+
   test("preserves immediate paths, cycles, and the sync/async boundary", async () => {
     const MISSING = token<object>("MISSING");
     const MISSING_ROOT = token<object>("MISSING_ROOT");
@@ -253,10 +314,16 @@ describe("resolver dependency", () => {
     expect(() => holder.has(VALUE)).toThrow(
       expect.objectContaining({ code: "DISPOSED" }),
     );
+    expect(() => holder.resolveOptional(VALUE)).toThrow(
+      expect.objectContaining({ code: "DISPOSED" }),
+    );
     await expect(holder.resolveAsync(VALUE)).rejects.toMatchObject({
       code: "DISPOSED",
     });
     await expect(holder.resolveAllAsync(VALUE)).rejects.toMatchObject({
+      code: "DISPOSED",
+    });
+    await expect(holder.resolveOptionalAsync(VALUE)).rejects.toMatchObject({
       code: "DISPOSED",
     });
   });

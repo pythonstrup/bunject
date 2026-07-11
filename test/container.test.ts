@@ -9,6 +9,65 @@ import {
 } from "../src/index";
 
 describe("Container", () => {
+  test("resolves optional providers without swallowing graph failures", async () => {
+    const MISSING = token<number>("MISSING");
+    const VALUE = token<number>("VALUE");
+    const ASYNC_VALUE = token<number>("ASYNC_VALUE");
+    const MANY = token<number>("MANY");
+    const FAILURE = token<number>("FAILURE");
+    const UNDEFINED = token<undefined>("UNDEFINED");
+    let undefinedCreations = 0;
+    const container = new Container();
+
+    expect(container.resolveOptional(MISSING)).toBeUndefined();
+    await expect(container.resolveOptionalAsync(MISSING)).resolves.toBeUndefined();
+
+    container.register(VALUE, { useValue: 42 });
+    container.register(ASYNC_VALUE, { useFactoryAsync: async () => 84 });
+    container.registerMulti(MANY, { useValue: 1 });
+    container.registerMulti(MANY, { useValue: 2 });
+    container.register(FAILURE, {
+      useFactory: () => {
+        throw new Error("optional provider failed");
+      },
+    });
+    container.register(UNDEFINED, {
+      useFactory: () => {
+        undefinedCreations += 1;
+        return undefined;
+      },
+    });
+
+    expect(container.resolveOptional(VALUE)).toBe(42);
+    await expect(container.resolveOptionalAsync(VALUE)).resolves.toBe(42);
+    expect(container.resolveOptional(UNDEFINED)).toBeUndefined();
+    expect(undefinedCreations).toBe(1);
+    expect(() => container.resolveOptional(ASYNC_VALUE)).toThrow(
+      expect.objectContaining({ code: "ASYNC_IN_SYNC" }),
+    );
+    await expect(container.resolveOptionalAsync(ASYNC_VALUE)).resolves.toBe(84);
+    expect(() => container.resolveOptional(MANY)).toThrow(
+      expect.objectContaining({ code: "MULTIPLE_PROVIDERS" }),
+    );
+    await expect(container.resolveOptionalAsync(MANY)).rejects.toMatchObject({
+      code: "MULTIPLE_PROVIDERS",
+    });
+    expect(() => container.resolveOptional(FAILURE)).toThrow(
+      expect.objectContaining({ code: "PROVIDER_FAILED" }),
+    );
+    await expect(container.resolveOptionalAsync(FAILURE)).rejects.toMatchObject({
+      code: "PROVIDER_FAILED",
+    });
+
+    container.dispose();
+    expect(() => container.resolveOptional(MISSING)).toThrow(
+      expect.objectContaining({ code: "DISPOSED" }),
+    );
+    await expect(container.resolveOptionalAsync(MISSING)).rejects.toMatchObject({
+      code: "DISPOSED",
+    });
+  });
+
   test("reuses a defined provider without wrapping it", () => {
     const VALUE = token<number>("VALUE");
     const DOUBLE = token<number>("DOUBLE");

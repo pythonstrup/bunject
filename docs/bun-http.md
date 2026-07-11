@@ -4,6 +4,9 @@ Create the application container once, then create and dispose one child for
 each request. Request-local values are borrowed; request-created class and
 factory resources are owned by the child.
 
+The canonical [executable example](../examples/bun-http.ts) is compiled and
+exercised by `bun run example:check` as part of the main merge gate.
+
 ```ts
 import { Container, Injectable, token } from "bunject";
 

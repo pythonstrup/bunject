@@ -24,6 +24,7 @@ Reference implementations:
 - [x] Standard decorators without reflect metadata or global registration
 - [x] Multi-binding and sync/async `resolveAll`
 - [x] Optional, all, and lifetime-safe lazy descriptors
+- [x] First-class optional sync/async resolution on containers and resolvers
 - [x] Read-only activation-scoped resolver for availability and dynamic
   single/multi lookup
 - [x] Captive dependency validation for declared and dynamic graphs
@@ -51,7 +52,7 @@ callers may still hold.
 - [x] Synchronous activation hooks
 - [x] Atomic module/bulk registration
 - [x] InversifyJS, TSyringe, and Awilix migration guides
-- [x] Bun HTTP request-scope example
+- [x] Executable and type-checked Bun HTTP request-scope example
 - [x] Checked declaration hash, package lint, and versioned changelog gate
 - [x] Agent map, architecture record, execution plan, and knowledge-link harness
 - [x] Shipped public API reference and declaration-level documentation
@@ -63,11 +64,14 @@ callers may still hold.
 - [x] 95% line/function/statement coverage threshold
 - [x] Pinned TypeScript 5.4 and current TypeScript source and packed-consumer checks
 - [x] Minimum Bun 1.3.10 and latest Bun jobs
+- [x] Minimum Bun npm-packed sync/async consumer smoke
+- [x] Local Bun 1.3.10 type, 163-test, and packed-consumer verification
 - [x] Packed tarball install plus isolated NodeNext, Bun, Node, declaration,
   and packaged-document link smoke
 - [x] Node 22/24/26 runtime matrix configured
+- [x] Node matrix exercises async context, scope, coalescing, paths, and disposal
 - [x] Windows packed-consumer job configured
-- [x] Package lint and exported-type compatibility checks
+- [x] Package lint and exported-type resolution checks
 - [x] Scope/disposal ownership and scheduler stress coverage
 - [x] Peer benchmark policy, representative graph/scope cases, and compressed-size
   release budgets
@@ -75,15 +79,16 @@ callers may still hold.
 - [x] Zero runtime dependencies and allowlisted package payload
 - [x] MIT license, changelog, security policy, and support policy
 - [x] Repository invariants and local inline documentation targets checked mechanically
-- [x] Deno 2 compatibility job configured
-- [x] Local Deno 2.8.1 runtime smoke
+- [x] Deno 2.0.0 and latest-Deno-2 compatibility matrix configured
+- [x] Local Deno 2.0.0 and 2.8.1 type/decorator/runtime smoke
 - [x] OIDC provenance release workflow gated by the full compatibility matrix
 - [ ] Deno 2, Windows, and runtime-matrix jobs passed on the eventual remote
 - [ ] npm trusted publisher, repository metadata, and provenance release verified
 
 `api/index.d.ts.sha256` deliberately makes any exported declaration change a
-review event; the maintainer must assess its SemVer impact, update the
-changelog, and then refresh the hash. A release additionally requires a
+review event; it is a drift gate, not a substitute for comparing against a
+previous published release. The maintainer must assess SemVer impact, update
+the changelog, and then refresh the hash. A release additionally requires a
 `v<package version>` tag and a dated changelog heading. Prerelease versions are
 blocked until the project adopts an explicit non-`latest` npm dist-tag policy.
 

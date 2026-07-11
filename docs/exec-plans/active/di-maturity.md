@@ -11,7 +11,7 @@ Ecosystem adoption and battle-testing remain external evidence.
 ## Current evidence
 
 - Bun 1.3.14 and minimum Bun 1.3.10 are configured.
-- The complete local merge gate passes on the current worktree: 161 tests,
+- The complete local merge gate passes on the current worktree: 163 tests,
   97.62% overall lines, and 100% kernel lines.
 - The verified runtime, public API, packaging, compatibility, and harness
   baseline is committed through `1dca27b`.
@@ -28,6 +28,15 @@ Ecosystem adoption and battle-testing remain external evidence.
 - npm publication now waits for latest/minimum Bun, Node 22/24/26, Windows, and
   Deno compatibility jobs; the repository harness mechanically checks that
   release dependency and its OIDC provenance markers.
+- Packed consumers now run the same concurrent async-context, error-path,
+  singleton-coalescing, scope, and disposal scenario under Bun and Node. Deno
+  2.0.0 and 2.8.1 pass type, standard-decorator, and runtime checks locally.
+- Bun 1.3.10 passes the source typecheck, all 163 tests, and the installed
+  packed-consumer smoke locally.
+- Container and Resolver optional sync/async resolution preserve every visible
+  provider failure and track absent dynamic edges for cache invalidation.
+- Every exported declaration and public method group has IDE-visible TSDoc, and
+  the Bun HTTP request-scope example is type-checked and executable.
 - The agent map, architecture record, active plan, and mechanical harness check
   are present, and both focused and combined harness checks pass.
 - npm registry currently has no public `bunject` package.
@@ -54,16 +63,25 @@ Ecosystem adoption and battle-testing remain external evidence.
   justifies changing every multi-resolution surface consistently.
 - Use `defineProvider<T>()` for stored dependency-bearing definitions instead
   of weakening `Provider<T>` or its negative type checks.
+- Optional resolution represents absence as `undefined` but never translates a
+  visible provider error; use `has()` when `T` itself can be `undefined` and
+  presence must be distinguished.
+- Function tokens and `useClass` values must be constructible at registration.
 
 ## In progress
 
-- Await the final GitHub URL needed for package identity, remote compatibility
-  evidence, and trusted-publisher setup.
+- Commit the independently audited optional-resolution and compatibility
+  baseline, then record its Git hash.
 
 ## Remaining work
 
 - Add opt-in chained parent/child multi-resolution only when a concrete
   aggregation use case justifies its cross-cutting semantics.
+- Define token-level observer cache-hit, hierarchy, async, and removal semantics
+  before adding the observer capability shared by Inversify and TSyringe.
+- Compare declarations against the previous published tarball after the first
+  release; the current hash is deliberately a drift/review gate, not a SemVer
+  compatibility proof.
 - After a GitHub URL exists, add package identity metadata and verify remote CI,
   trusted publishing, and provenance.
 
@@ -117,3 +135,17 @@ Ecosystem adoption and battle-testing remain external evidence.
   barrier and replaced volatile peer-ratio claims with an absolute policy.
 - 2026-07-11: committed the verified public API and release-harness baseline as
   `1dca27b`.
+- 2026-07-11: added first-class optional sync/async resolution to Container and
+  Resolver with absence mutation tracking and shared-path failure semantics.
+- 2026-07-11: rejected non-constructible function tokens and class providers at
+  registration, before graph activation can begin.
+- 2026-07-11: expanded packed Bun/Node and minimum-Bun compatibility evidence,
+  added Deno 2.0.0/latest typed decorator checks, and made the Bun HTTP example
+  executable in the complete merge gate.
+- 2026-07-11: completed declaration TSDoc coverage, corrected SemVer evidence
+  wording, and raised reviewed gzip ceilings to 15 KiB runtime / 5 KiB types.
+- 2026-07-11: passed the complete 163-test merge gate and local Deno 2.0.0 and
+  2.8.1 checks with the final worktree surface.
+- 2026-07-11: passed the representative benchmark and independent optional API,
+  public declaration, and cross-runtime/package audits with no remaining local
+  P0, P1, or P2 finding in the changed surface.

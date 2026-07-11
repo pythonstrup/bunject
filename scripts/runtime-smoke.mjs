@@ -1,0 +1,103 @@
+const delay = (milliseconds) =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+export async function runRuntimeSmoke({
+  Container,
+  defineProvider,
+  resolver,
+  token,
+}) {
+  const VALUE = token("VALUE");
+  const MISSING = token("MISSING");
+  const RESOLUTION_VALUE = token("RESOLUTION_VALUE");
+  const ASYNC_SINGLETON = token("ASYNC_SINGLETON");
+  const FIRST_ROOT = token("FIRST_ROOT");
+  const SECOND_ROOT = token("SECOND_ROOT");
+  const RESOURCE = token("RESOURCE");
+  let singletonCreations = 0;
+  let disposals = 0;
+
+  const container = new Container();
+  container.register(VALUE, { useValue: 42 });
+  container.register(RESOLUTION_VALUE, {
+    scope: "resolution",
+    useFactory: () => ({}),
+  });
+  container.register(ASYNC_SINGLETON, defineProvider()({
+    inject: [],
+    scope: "singleton",
+    useFactoryAsync: async () => {
+      await delay(2);
+      singletonCreations += 1;
+      return {};
+    },
+  }));
+
+  const registerRoot = (root, milliseconds) => {
+    container.register(root, defineProvider()({
+      inject: [resolver()],
+      useFactoryAsync: async (activeResolver) => {
+        const singletonPromise = activeResolver.resolveAsync(ASYNC_SINGLETON);
+        const before = activeResolver.resolve(RESOLUTION_VALUE);
+        await delay(milliseconds);
+        const after = activeResolver.resolve(RESOLUTION_VALUE);
+        const singleton = await singletonPromise;
+        let path;
+        try {
+          activeResolver.resolve(MISSING);
+        } catch (error) {
+          path = error?.path;
+        }
+        return {
+          available: activeResolver.has(VALUE),
+          before,
+          after,
+          path,
+          singleton,
+          value: activeResolver.resolve(VALUE),
+        };
+      },
+    }));
+  };
+  registerRoot(FIRST_ROOT, 8);
+  registerRoot(SECOND_ROOT, 1);
+  container.register(RESOURCE, {
+    scope: "scoped",
+    useFactory: () => ({}),
+    onDisposalAsync: async () => {
+      disposals += 1;
+    },
+  });
+
+  const scope = container.createScope();
+  scope.register(VALUE, { useValue: 21 });
+  const [first, second] = await Promise.all([
+    scope.resolveAsync(FIRST_ROOT),
+    scope.resolveAsync(SECOND_ROOT),
+  ]);
+  scope.resolve(RESOURCE);
+
+  if (
+    !first.available ||
+    !second.available ||
+    first.value !== 21 ||
+    second.value !== 21 ||
+    first.before !== first.after ||
+    second.before !== second.after ||
+    first.before === second.before ||
+    first.singleton !== second.singleton ||
+    singletonCreations !== 1 ||
+    first.path?.length !== 2 ||
+    first.path[0] !== FIRST_ROOT ||
+    first.path[1] !== MISSING ||
+    second.path?.length !== 2 ||
+    second.path[0] !== SECOND_ROOT ||
+    second.path[1] !== MISSING
+  ) {
+    throw new Error("Async runtime context smoke test failed");
+  }
+
+  await scope.disposeAsync();
+  if (disposals !== 1) throw new Error("Runtime disposal smoke test failed");
+  await container.disposeAsync();
+}

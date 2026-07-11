@@ -19,8 +19,11 @@ signals are:
 - focused deterministic tests for a reported behavior;
 - property and randomized stress tests for graph/scheduler behavior;
 - current and pinned minimum TypeScript negative fixtures;
-- npm-packed TypeScript 5.4/current, Bun, and Node consumers, packaged-document
-  link validation, and a built self-package Deno compatibility smoke;
+- npm-packed TypeScript 5.4/current consumers plus a shared Bun/Node async
+  context, scope, and disposal smoke;
+- standard-decorator and type-checked self-package smoke on Deno 2.0.0 and the
+  current Deno 2 line;
+- an executable, type-checked Bun HTTP request-scope example;
 - package-lint, public declaration hash, and compressed-size gates;
 - peer benchmarks for performance evidence;
 - `harness:check` for repository maps, links, and design invariants.

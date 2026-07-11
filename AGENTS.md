@@ -39,6 +39,7 @@ changing behavior.
 - `bun run check`: complete local merge gate.
 - `bun run package:check`: npm-packed Bun and Node consumer smoke.
 - `bun run test:deno`: Deno 2 consumer smoke when Deno is installed.
+- `bun run example:check`: executable Bun HTTP request-scope example.
 - `bun run bench`: peer benchmark evidence.
 
 ## Non-negotiable invariants

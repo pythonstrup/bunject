@@ -42,7 +42,7 @@ An `inject` tuple accepts direct tokens and the following frozen descriptors:
 | Helper | Injected value | Resolution behavior |
 | --- | --- | --- |
 | `TOKEN` | `T` | Requires exactly one provider. |
-| `optional(TOKEN)` | `T \| undefined` | Returns `undefined` only when no provider is visible; an ambiguous visible set still fails. |
+| `optional(TOKEN)` | `T \| undefined` | Absence yields `undefined`; an ambiguous or failing provider still fails. |
 | `all(TOKEN)` | `readonly T[]` | Resolves the nearest complete binding set in registration order; returns `[]` when absent. |
 | `lazy(TOKEN)` | `Lazy<T>` | Injects frozen `resolve()` and `resolveAsync()` functions and defers target construction and missing-token validation. |
 | `resolver()` | `Resolver` | Injects a frozen token-agnostic resolver with single and multi, sync and async methods. |
@@ -59,7 +59,11 @@ interface Resolver {
     options?: RegistrationQueryOptions,
   ) => boolean;
   readonly resolve: <T>(token: Token<T>) => T;
+  readonly resolveOptional: <T>(token: Token<T>) => T | undefined;
   readonly resolveAsync: <T>(token: Token<T>) => Promise<T>;
+  readonly resolveOptionalAsync: <T>(
+    token: Token<T>,
+  ) => Promise<T | undefined>;
   readonly resolveAll: <T>(token: Token<T>) => readonly T[];
   readonly resolveAllAsync: <T>(token: Token<T>) => Promise<readonly T[]>;
 }
@@ -289,7 +293,9 @@ root after its callers drain; mutation is not an immediate deactivation API.
 | Method or property | Result | Notes |
 | --- | --- | --- |
 | `resolve<T>(token)` | `T` | Validates and resolves one provider synchronously. |
+| `resolveOptional<T>(token)` | `T \| undefined` | Absence yields `undefined`; a visible provider resolves normally. |
 | `resolveAsync<T>(token)` | `Promise<T>` | Resolves sync or async providers. Concurrent requests coalesce each cached provider. |
+| `resolveOptionalAsync<T>(token)` | `Promise<T \| undefined>` | Async optional resolution; registered-provider errors are preserved. |
 | `resolveAll<T>(token)` | `readonly T[]` | Resolves the nearest binding set synchronously; absent means `[]`. |
 | `resolveAllAsync<T>(token)` | `Promise<readonly T[]>` | Async form of `resolveAll`. |
 | `has<T>(token, { own? })` | `boolean` | Searches the visible hierarchy by default; `{ own: true }` checks only local registrations. The injected `Resolver` exposes the same read-only query. |
@@ -304,12 +310,18 @@ semantics as `resolveAll()`.
 `RegistrationQueryOptions` is `{ own?: boolean }`. `ValidationOptions` is
 `{ async?: boolean; all?: boolean }`.
 
-Sync validation and resolution reject the complete declared graph before
-construction when it contains an async provider. A synchronous provider that
+Sync validation and resolution reject the complete eager graph before
+construction when it contains an async provider. Deferred lazy/resolver targets
+are checked when invoked. A synchronous provider that
 returns a Promise also fails. Use `useFactoryAsync` and `resolveAsync()` for
-that graph. Dynamic calls made during activation retain cycle, lifetime,
-ownership, and registry-mutation tracking. Deferred lazy and resolver calls
-re-read the latest registry while retaining lifetime and ownership checks.
+that graph. Optional resolution changes only the absent-provider result;
+ambiguity, async/sync mismatch, cycles, captive lifetimes, and provider failures
+remain errors. A registered provider may itself produce `undefined`; use
+`has()` when `T` includes `undefined` and presence must be distinguished.
+Dynamic calls made during activation retain cycle, lifetime,
+ownership, and registry-mutation tracking, including an absent optional edge.
+Deferred lazy and resolver calls re-read the latest registry while retaining
+lifetime and ownership checks.
 
 ### Inspection results
 
@@ -350,7 +362,7 @@ or all targets as missing, and does not traverse deferred `lazy` or dynamic
 - `code: ResolutionErrorCode`
 - `path: readonly Token<any>[]`, frozen and ordered from requested root to the
   failing token
-- `cycle?: readonly Token<any>[]`, the frozen minimal cycle when available
+- `cycle: readonly Token<any>[] | undefined`, the frozen minimal cycle when available
 - the original provider `cause` when one exists
 
 Its public constructor is `new ResolutionError(code, message, path, cause?,
@@ -422,8 +434,8 @@ providers, active resolution, or async-only resources.
 
 ## Boundary summary
 
-- `resolve()` and `resolveAll()` are strictly synchronous; their async forms
-  can resolve both sync and async providers.
+- `resolve()`, `resolveOptional()`, and `resolveAll()` are strictly synchronous;
+  their async forms can resolve both sync and async providers.
 - A local binding set shadows the complete parent set; hierarchy lookup never
   merges parent and child multi-bindings.
 - Singleton activation is registration-owner-affine. Other lifetimes use the

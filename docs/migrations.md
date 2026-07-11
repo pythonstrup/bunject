@@ -35,7 +35,8 @@ class UserRepository {
 or `static inject = [DATABASE] as const`. Replace named/tagged binding patterns
 with typed symbol tokens, and `getAll()` with `resolveAll()`. `createChild()`
 maps to `createScope()`. Use `lazy()` for an intentionally deferred edge;
-Bunject does not create circular proxies.
+Bunject does not create circular proxies. Inversify's `{ optional: true }`
+maps to `resolveOptional()` or `resolveOptionalAsync()`.
 
 ## From TSyringe
 
@@ -109,7 +110,8 @@ container.resolve(UserRepository);
 Replace string cradle keys with invariant typed tokens. Awilix `singleton`,
 `scoped`, and `transient` map directly. Bunject additionally distinguishes
 `resolution`, which is shared only within one top-level graph. Awilix scopes map
-to `createScope()`.
+to `createScope()`. Awilix `{ allowUnregistered: true }` maps to
+`resolveOptional()` or `resolveOptionalAsync()`.
 
 Awilix factories receive a cradle; Bunject factories receive their declared
 dependencies in tuple order. This keeps missing dependencies and async

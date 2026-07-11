@@ -17,6 +17,7 @@
   "sideEffects": false,
   "files": [
     "dist",
+    "examples/bun-http.ts",
     "docs/api.md",
     "docs/bun-http.md",
     "docs/harness.md",
@@ -44,6 +45,7 @@
     "api:check": "bun run build && bun run scripts/project-check.ts",
     "bench": "bun run bench/container.bench.ts",
     "build": "bun run scripts/build.ts",
+    "example:check": "bun run build && tsc -p examples/tsconfig.json && bun run examples/bun-http.ts",
     "harness:check": "bun run scripts/harness-check.ts",
     "package:check": "bun run scripts/package-smoke.ts",
     "package:lint": "bun run scripts/package-lint.ts",
@@ -51,13 +53,13 @@
     "release:check": "bun run build && bun run scripts/project-check.ts --release",
     "size": "bun run build && bun run scripts/size-check.ts",
     "test:coverage": "bun test --coverage",
-    "test:deno": "bun run build && deno run scripts/deno-smoke.mjs",
+    "test:deno": "bun run build && deno check scripts/deno-smoke.ts && deno run scripts/deno-smoke.ts",
     "test:property": "bun test ./test/property.test.ts",
     "test:stress": "bun test ./test/stress.test.ts --rerun-each 3 --randomize",
     "typecheck": "tsc -p tsconfig.json",
     "typecheck:min": "bun node_modules/typescript-5-4/bin/tsc -p tsconfig.json",
     "test": "bun test",
-    "check": "bun run harness:check && bun run typecheck && bun run typecheck:min && bun run test:coverage && bun run test:stress && bun run package:lint && bun run package:check && bun run size && bun run api:check"
+    "check": "bun run harness:check && bun run typecheck && bun run typecheck:min && bun run example:check && bun run test:coverage && bun run test:stress && bun run package:lint && bun run package:check && bun run size && bun run api:check"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",

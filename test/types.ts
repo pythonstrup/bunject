@@ -38,7 +38,13 @@ container.register(CACHE, {
 });
 
 const database: Database = container.resolve(DATABASE);
+const optionalDatabase: Database | undefined =
+  container.resolveOptional(DATABASE);
+const pendingOptionalDatabase: Promise<Database | undefined> =
+  container.resolveOptionalAsync(DATABASE);
 void database;
+void optionalDatabase;
+void pendingOptionalDatabase;
 
 // @ts-expect-error token type controls the value provider type
 container.register(DATABASE, { useValue: new Cache() });
@@ -269,15 +275,21 @@ container.register(ACTIVE_RESOLVER, {
     const available: boolean = activeResolver.has(DATABASE);
     const own: boolean = activeResolver.has(DATABASE, { own: true });
     const resolved: Database = activeResolver.resolve(DATABASE);
+    const optionalDatabase: Database | undefined =
+      activeResolver.resolveOptional(DATABASE);
     const allCaches: readonly Cache[] = activeResolver.resolveAll(CACHE);
     const pending: Promise<Database> = activeResolver.resolveAsync(DATABASE);
+    const pendingOptional: Promise<Database | undefined> =
+      activeResolver.resolveOptionalAsync(DATABASE);
     const pendingAll: Promise<readonly Cache[]> =
       activeResolver.resolveAllAsync(CACHE);
     void resolved;
+    void optionalDatabase;
     void available;
     void own;
     void allCaches;
     void pending;
+    void pendingOptional;
     void pendingAll;
     // @ts-expect-error a Resolver cannot mutate its container
     activeResolver.register(DATABASE, { useValue: new Database() });

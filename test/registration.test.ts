@@ -20,6 +20,11 @@ describe("registration validation", () => {
           (container as any).register({ invalid: true }, { useValue: 1 }),
       },
       {
+        code: "INVALID_TOKEN",
+        register: (container) =>
+          (container as any).register(() => {}, { useValue: 1 }),
+      },
+      {
         code: "INVALID_PROVIDER",
         register: (container) => (container as any).register(TOKEN, undefined),
       },
@@ -76,6 +81,14 @@ describe("registration validation", () => {
         code: "INVALID_PROVIDER",
         register: (container) =>
           (container as any).register(TOKEN, { useClass: 1 }),
+      },
+      {
+        code: "INVALID_PROVIDER",
+        register: (container) =>
+          (container as any).register(TOKEN, {
+            inject: [],
+            useClass: () => ({}),
+          }),
       },
       {
         code: "INVALID_PROVIDER",

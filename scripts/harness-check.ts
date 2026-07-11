@@ -16,9 +16,13 @@ const requiredFiles = [
   "docs/harness.md",
   "docs/maturity.md",
   "docs/exec-plans/README.md",
+  "examples/bun-http.ts",
+  "examples/tsconfig.json",
   "package.json",
   "tsconfig.json",
   "src/index.ts",
+  "scripts/deno-smoke.ts",
+  "scripts/runtime-smoke.mjs",
 ] as const;
 
 for (const file of requiredFiles) {
@@ -95,6 +99,7 @@ for (const script of [
   "release:check",
   "test:deno",
   "typecheck:min",
+  "example:check",
 ]) {
   if (!packageJson.scripts?.[script]) {
     failures.push(`package.json is missing the ${script} script.`);
@@ -107,6 +112,7 @@ for (const script of [
   "harness:check",
   "typecheck",
   "typecheck:min",
+  "example:check",
   "test:coverage",
   "test:stress",
   "package:lint",
@@ -144,7 +150,8 @@ for (const marker of [
   "bun-version: 1.3.10",
   "node: [22, 24, 26]",
   "runs-on: windows-latest",
-  "deno-version: v2.x",
+  "deno: [v2.0.0, v2.x]",
+  "deno-version: ${{ matrix.deno }}",
   "bun run check",
   "bun run package:check",
   "bun run test:deno",
