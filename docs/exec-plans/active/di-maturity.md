@@ -14,7 +14,7 @@ Ecosystem adoption and battle-testing remain external evidence.
 - The complete local merge gate passes: 175 tests,
   99.32% overall lines, and 100% lines in every source module.
 - The verified runtime, public API, packaging, compatibility, and harness
-  baseline is committed through `2addd82`.
+  baseline is committed through `5e3ea44`.
 - The activation-scoped `resolver()` descriptor and provider-level cleanup
   adapters have focused, type, coverage, packed-consumer, and combined-gate
   evidence.
@@ -93,9 +93,8 @@ Ecosystem adoption and battle-testing remain external evidence.
 
 ## In progress
 
-- Record the verified six-file source modularization as the new Git baseline,
-  then return to measured resolution hot-path profiling. Public API and runtime
-  behavior remain unchanged.
+- Profile the measured resolution hot path and pursue only repeatable,
+  correctness-preserving improvements justified by the benchmark harness.
 
 ## Remaining work
 
@@ -231,3 +230,6 @@ Ecosystem adoption and battle-testing remain external evidence.
   and 5.4, aggregate API/size checks, and adversarial hidden-file and payload
   mutations. Independent source and harness reviews found no remaining P0-P3
   issue.
+- 2026-07-11: committed the verified modular runtime and aggregate package
+  harness baseline as `5e3ea44`; `index.ts` is now a 61-line explicit public
+  facade over five internal modules.
