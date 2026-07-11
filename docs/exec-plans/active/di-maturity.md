@@ -16,7 +16,7 @@ Ecosystem adoption and battle-testing remain external evidence.
   every focused leaf retain 100% line coverage; the extracted resolution kernel
   has 95.05% lines and 100% functions.
 - The verified runtime, public API, packaging, compatibility, and harness
-  baseline is committed through `024587d`.
+  baseline is committed through `b83bace`.
 - The activation-scoped `resolver()` descriptor and provider-level cleanup
   adapters have focused, type, coverage, packed-consumer, and combined-gate
   evidence.
@@ -299,3 +299,7 @@ Ecosystem adoption and battle-testing remain external evidence.
   modularization regression: warm singleton median 63.27 ns versus the recorded
   62.11 ns, and transient class median 146.47 ns versus 150.16 ns, both within
   prior measurement noise.
+- 2026-07-11: three independent final reviews found no remaining local P0-P3
+  issue after returning validation-cache ownership to `Container`; committed the
+  verified resolution-kernel, contributor-intake, and release-hardening baseline
+  as `b83bace`.
