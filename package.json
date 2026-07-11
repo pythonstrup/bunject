@@ -1,0 +1,64 @@
+{
+  "name": "bunject",
+  "version": "0.1.0",
+  "description": "A Bun-first dependency injection container for standard TypeScript decorators.",
+  "license": "MIT",
+  "keywords": [
+    "bun",
+    "dependency-injection",
+    "decorators",
+    "ioc",
+    "typescript"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "docs",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "bun": ">=1.3.10",
+    "node": ">=22"
+  },
+  "packageManager": "bun@1.3.14",
+  "scripts": {
+    "bench": "bun run bench/container.bench.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "package:check": "bun run scripts/package-smoke.ts",
+    "package:lint": "bun run scripts/package-lint.ts",
+    "prepack": "bun run build",
+    "size": "bun run build && bun run scripts/size-check.ts",
+    "test:coverage": "bun test --coverage",
+    "test:property": "bun test ./test/property.test.ts",
+    "test:stress": "bun test ./test/stress.test.ts --rerun-each 3 --randomize",
+    "typecheck": "tsc -p tsconfig.json",
+    "typecheck:min": "bun x --package typescript@5.4.5 tsc -p tsconfig.json",
+    "test": "bun test",
+    "check": "bun run typecheck && bun run typecheck:min && bun run test:coverage && bun run test:stress && bun run package:lint && bun run package:check && bun run size"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@types/bun": "^1.3.14",
+    "awilix": "^13.0.5",
+    "fast-check": "^4.9.0",
+    "inversify": "^8.1.2",
+    "mitata": "^1.0.34",
+    "publint": "^0.3.21",
+    "reflect-metadata": "^0.2.2",
+    "tsyringe": "^4.10.0",
+    "typescript": "^7.0.2"
+  }
+}

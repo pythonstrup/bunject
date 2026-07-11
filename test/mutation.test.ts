@@ -1,0 +1,510 @@
+import { describe, expect, test } from "bun:test";
+import {
+  Container,
+  RegistrationError,
+  all,
+  lazy,
+  optional,
+  token,
+} from "../src/index";
+
+describe("container mutation", () => {
+  test("preserves unrelated singleton identity when registrations change", () => {
+    const SINGLETON = token<object>("SINGLETON");
+    const OTHER = token<number>("OTHER");
+    const container = new Container();
+    container.register(SINGLETON, {
+      scope: "singleton",
+      useFactory: () => ({}),
+    });
+
+    const instance = container.resolve(SINGLETON);
+    container.register(OTHER, { useValue: 1 });
+
+    expect(container.resolve(SINGLETON)).toBe(instance);
+  });
+
+  test("preserves cached lazy holders while their target changes", () => {
+    const TARGET = token<number>("TARGET");
+    const HOLDER = token<{ resolve(): number }>("HOLDER");
+    const container = new Container();
+    container.register(TARGET, { useValue: 1 });
+    container.register(HOLDER, {
+      inject: [lazy(TARGET)],
+      scope: "singleton",
+      useFactory: (target) => target,
+    });
+
+    const holder = container.resolve(HOLDER);
+    container.rebind(TARGET, { useValue: 2 });
+
+    expect(container.resolve(HOLDER)).toBe(holder);
+    expect(holder.resolve()).toBe(2);
+  });
+
+  test("rebind is atomic when the replacement provider is invalid", () => {
+    const VALUE = token<object>("VALUE");
+    const container = new Container();
+    container.register(VALUE, {
+      scope: "singleton",
+      useFactory: () => ({ version: 1 }),
+    });
+    const original = container.resolve(VALUE);
+
+    expect(() =>
+      (container as any).rebind(VALUE, {
+        useFactory: () => ({ version: 2 }),
+        useValue: { version: 2 },
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        code: "INVALID_PROVIDER",
+        token: VALUE,
+      }),
+    );
+    expect(container.resolve(VALUE)).toBe(original);
+  });
+
+  test("keeps rebind and unregister local and restores parent fallback", () => {
+    const VALUE = token<{ readonly source: string }>("VALUE");
+    const parent = new Container();
+    parent.register(VALUE, {
+      scope: "scoped",
+      useFactory: () => ({ source: "parent" }),
+    });
+    const child = parent.createScope();
+    const sibling = parent.createScope();
+
+    expect(() =>
+      child.rebind(VALUE, {
+        scope: "scoped",
+        useFactory: () => ({ source: "invalid inherited rebind" }),
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        code: "NOT_REGISTERED",
+        token: VALUE,
+      }),
+    );
+
+    child.register(VALUE, {
+      scope: "scoped",
+      useFactory: () => ({ source: "child:1" }),
+    });
+    const nested = child.createScope();
+    const parentValue = parent.resolve(VALUE);
+    const siblingValue = sibling.resolve(VALUE);
+    const childValue = child.resolve(VALUE);
+    const nestedValue = nested.resolve(VALUE);
+
+    child.rebind(VALUE, {
+      scope: "scoped",
+      useFactory: () => ({ source: "child:2" }),
+    });
+
+    expect(parent.resolve(VALUE)).toBe(parentValue);
+    expect(sibling.resolve(VALUE)).toBe(siblingValue);
+    expect(child.resolve(VALUE)).not.toBe(childValue);
+    expect(child.resolve(VALUE).source).toBe("child:2");
+    expect(nested.resolve(VALUE)).not.toBe(nestedValue);
+    expect(nested.resolve(VALUE).source).toBe("child:2");
+
+    expect(child.unregister(VALUE)).toBe(true);
+    expect(child.resolve(VALUE).source).toBe("parent");
+    expect(nested.resolve(VALUE).source).toBe("parent");
+    expect(child.unregister(VALUE)).toBe(false);
+    expect(parent.resolve(VALUE)).toBe(parentValue);
+    expect(sibling.resolve(VALUE)).toBe(siblingValue);
+  });
+
+  test("invalidates cached dependents transitively after rebind", () => {
+    const DEPENDENCY = token<{ readonly version: number }>("DEPENDENCY");
+    const ROOT = token<{ readonly dependency: { readonly version: number } }>(
+      "ROOT",
+    );
+    const container = new Container();
+    container.register(DEPENDENCY, {
+      scope: "singleton",
+      useFactory: () => ({ version: 1 }),
+    });
+    container.register(ROOT, {
+      inject: [DEPENDENCY],
+      scope: "singleton",
+      useFactory: (dependency) => ({ dependency }),
+    });
+
+    const first = container.resolve(ROOT);
+    expect(first.dependency.version).toBe(1);
+
+    container.rebind(DEPENDENCY, { useValue: { version: 2 } });
+
+    const second = container.resolve(ROOT);
+    expect(second).not.toBe(first);
+    expect(second.dependency).not.toBe(first.dependency);
+    expect(second.dependency.version).toBe(2);
+  });
+
+  test("invalidates cached dependents discovered through dynamic resolution", () => {
+    const VALUE = token<number>("VALUE");
+    const ROOT = token<{ readonly value: number }>("ROOT");
+    const container = new Container();
+    container.register(VALUE, { useValue: 1 });
+    container.register(ROOT, {
+      scope: "singleton",
+      useFactory: () => ({ value: container.resolve(VALUE) }),
+    });
+
+    const first = container.resolve(ROOT);
+    container.rebind(VALUE, { useValue: 2 });
+    const second = container.resolve(ROOT);
+
+    expect(first.value).toBe(1);
+    expect(second.value).toBe(2);
+    expect(second).not.toBe(first);
+  });
+
+  test("tracks dynamic has queries that influence cached construction", () => {
+    const OPTIONAL = token<number>("OPTIONAL");
+    const ROOT = token<number | undefined>("ROOT");
+    const container = new Container();
+    container.register(ROOT, {
+      scope: "singleton",
+      useFactory: () =>
+        container.has(OPTIONAL) ? container.resolve(OPTIONAL) : undefined,
+    });
+
+    expect(container.resolve(ROOT)).toBeUndefined();
+    container.register(OPTIONAL, { useValue: 42 });
+    expect(container.resolve(ROOT)).toBe(42);
+  });
+
+  test("keeps runtime dependency edges isolated per scoped activation", () => {
+    const VALUE = token<number>("VALUE");
+    const ROOT = token<{ value?: number }>("ROOT");
+    const parent = new Container();
+    parent.register(VALUE, { useValue: 1 });
+    parent.register(ROOT, {
+      scope: "scoped",
+      useFactory: () => ({}),
+      onActivation: (instance, context) => {
+        instance.value = context.container.resolve(VALUE);
+      },
+    });
+    const inherited = parent.createScope();
+    const shadowed = parent.createScope();
+    shadowed.register(VALUE, { useValue: 10 });
+
+    const inheritedBefore = inherited.resolve(ROOT);
+    const shadowedBefore = shadowed.resolve(ROOT);
+    parent.rebind(VALUE, { useValue: 2 });
+
+    expect(inherited.resolve(ROOT)).not.toBe(inheritedBefore);
+    expect(inherited.resolve(ROOT).value).toBe(2);
+    expect(shadowed.resolve(ROOT)).toBe(shadowedBefore);
+    expect(shadowedBefore.value).toBe(10);
+  });
+
+  test("does not copy one branch's runtime edges into sibling caches", () => {
+    const VALUE = token<number>("VALUE");
+    const LEFT = token<object>("LEFT");
+    const RIGHT = token<object>("RIGHT");
+    const ROOT = token<readonly [object, object]>("ROOT");
+    const container = new Container();
+    container.register(VALUE, { useValue: 1 });
+    container.register(LEFT, {
+      scope: "singleton",
+      useFactory: () => ({ value: container.resolve(VALUE) }),
+    });
+    container.register(RIGHT, { scope: "singleton", useFactory: () => ({}) });
+    container.register(ROOT, {
+      inject: [LEFT, RIGHT],
+      scope: "singleton",
+      useFactory: (left, right) => [left, right] as const,
+    });
+
+    const before = container.resolve(ROOT);
+    container.rebind(VALUE, { useValue: 2 });
+    const after = container.resolve(ROOT);
+
+    expect(after[0]).not.toBe(before[0]);
+    expect(after[1]).toBe(before[1]);
+  });
+
+  test("propagates runtime edges through uncached transient providers", () => {
+    const VALUE = token<number>("VALUE");
+    const TRANSIENT = token<number>("TRANSIENT");
+    const ROOT = token<number>("ROOT");
+    const container = new Container();
+    container.register(VALUE, { useValue: 1 });
+    container.register(TRANSIENT, {
+      useFactory: () => container.resolve(VALUE),
+    });
+    container.register(ROOT, {
+      inject: [TRANSIENT],
+      scope: "singleton",
+      useFactory: (value) => value,
+    });
+
+    expect(container.resolve(ROOT)).toBe(1);
+    container.rebind(VALUE, { useValue: 2 });
+    expect(container.resolve(ROOT)).toBe(2);
+  });
+
+  test("propagates attempted runtime edges when nested resolution is caught", () => {
+    const LATE = token<number>("LATE");
+    const TRANSIENT = token<number>("TRANSIENT");
+    const ROOT = token<number>("ROOT");
+    const container = new Container();
+    container.register(TRANSIENT, {
+      useFactory: () => container.resolve(LATE),
+    });
+    container.register(ROOT, {
+      scope: "singleton",
+      useFactory: () => {
+        try {
+          return container.resolve(TRANSIENT);
+        } catch {
+          return 0;
+        }
+      },
+    });
+
+    expect(container.resolve(ROOT)).toBe(0);
+    container.register(LATE, { useValue: 42 });
+    expect(container.resolve(ROOT)).toBe(42);
+  });
+
+  test("shares pending runtime edges with callers that catch rejection", async () => {
+    const LATE = token<number>("LATE");
+    const ASYNC = token<number>("ASYNC");
+    const ROOT = token<number>("ROOT");
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const container = new Container();
+    container.register(ASYNC, {
+      scope: "singleton",
+      useFactoryAsync: async () => {
+        await gate;
+        return container.resolveAsync(LATE);
+      },
+    });
+    container.register(ROOT, {
+      scope: "singleton",
+      useFactoryAsync: async () => {
+        try {
+          return await container.resolveAsync(ASYNC);
+        } catch {
+          return 0;
+        }
+      },
+    });
+
+    const pending = container.resolveAsync(ASYNC);
+    await Promise.resolve();
+    const fallback = container.resolveAsync(ROOT);
+    release();
+    await expect(pending).rejects.toEqual(
+      expect.objectContaining({ code: "NOT_FOUND" }),
+    );
+    expect(await fallback).toBe(0);
+
+    container.register(LATE, { useValue: 42 });
+    expect(await container.resolveAsync(ROOT)).toBe(42);
+  });
+
+  test("keeps collecting async edges after a parent cache completes", async () => {
+    const VALUE = token<number>("VALUE");
+    const ASYNC = token<number>("ASYNC");
+    const ROOT = token<{ readonly value: number }>("ROOT");
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const container = new Container();
+    container.register(VALUE, { useValue: 1 });
+    container.register(ASYNC, {
+      scope: "singleton",
+      useFactoryAsync: async () => {
+        await gate;
+        return container.resolve(VALUE);
+      },
+    });
+    container.register(ROOT, {
+      scope: "singleton",
+      useFactoryAsync: async () => ({
+        value: await Promise.race([
+          container.resolveAsync(ASYNC),
+          Promise.resolve(0),
+        ]),
+      }),
+    });
+
+    const first = await container.resolveAsync(ROOT);
+    expect(first.value).toBe(0);
+    release();
+    await container.resolveAsync(ASYNC);
+    container.rebind(VALUE, { useValue: 2 });
+
+    expect(await container.resolveAsync(ROOT)).not.toBe(first);
+  });
+
+  test("invalidates a cached optional dependency when registrations change", () => {
+    const OPTIONAL = token<number>("OPTIONAL");
+    const ROOT = token<{ readonly value: number | undefined }>("ROOT");
+    const container = new Container();
+    container.register(ROOT, {
+      inject: [optional(OPTIONAL)],
+      scope: "singleton",
+      useFactory: (value) => ({ value }),
+    });
+
+    const missing = container.resolve(ROOT);
+    expect(missing.value).toBeUndefined();
+
+    container.register(OPTIONAL, { useValue: 42 });
+    const present = container.resolve(ROOT);
+    expect(present).not.toBe(missing);
+    expect(present.value).toBe(42);
+
+    expect(container.unregister(OPTIONAL)).toBe(true);
+    const missingAgain = container.resolve(ROOT);
+    expect(missingAgain).not.toBe(present);
+    expect(missingAgain.value).toBeUndefined();
+  });
+
+  test("invalidates a cached all dependency when a multi set changes", () => {
+    const ITEM = token<number>("ITEM");
+    const ROOT = token<{ readonly values: readonly number[] }>("ROOT");
+    const container = new Container();
+    container.register(ROOT, {
+      inject: [all(ITEM)],
+      scope: "singleton",
+      useFactory: (values) => ({ values }),
+    });
+
+    const empty = container.resolve(ROOT);
+    expect(empty.values).toEqual([]);
+
+    container.registerMulti(ITEM, { useValue: 1 });
+    const one = container.resolve(ROOT);
+    expect(one).not.toBe(empty);
+    expect(one.values).toEqual([1]);
+
+    container.registerMulti(ITEM, { useValue: 2 });
+    const two = container.resolve(ROOT);
+    expect(two).not.toBe(one);
+    expect(two.values).toEqual([1, 2]);
+
+    expect(container.unregister(ITEM)).toBe(true);
+    const emptyAgain = container.resolve(ROOT);
+    expect(emptyAgain).not.toBe(two);
+    expect(emptyAgain.values).toEqual([]);
+  });
+
+  test("retires old resource generations until final disposal", () => {
+    const RESOURCE = token<Disposable & { readonly generation: number }>(
+      "RESOURCE",
+    );
+    const order: number[] = [];
+    let generation = 1;
+    const provider = () => ({
+      generation,
+      [Symbol.dispose]() {
+        order.push(this.generation);
+      },
+    });
+    const container = new Container();
+    container.register(RESOURCE, {
+      scope: "singleton",
+      useFactory: provider,
+    });
+
+    const first = container.resolve(RESOURCE);
+    generation = 2;
+    container.rebind(RESOURCE, {
+      scope: "singleton",
+      useFactory: provider,
+    });
+
+    expect(order).toEqual([]);
+    expect(first.generation).toBe(1);
+    const second = container.resolve(RESOURCE);
+    expect(second).not.toBe(first);
+    expect(second.generation).toBe(2);
+    expect(order).toEqual([]);
+
+    container.dispose();
+    expect(order).toEqual([2, 1]);
+  });
+
+  test("blocks mutation across the whole family and unlocks after rejection", async () => {
+    const PENDING = token<object>("PENDING");
+    const SIBLING_VALUE = token<number>("SIBLING_VALUE");
+    const NESTED_VALUE = token<number>("NESTED_VALUE");
+    let markStarted!: () => void;
+    let release!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const parent = new Container();
+    parent.register(PENDING, {
+      scope: "scoped",
+      useFactoryAsync: async () => {
+        markStarted();
+        await gate;
+        throw new Error("expected failure");
+      },
+    });
+    const child = parent.createScope();
+    const sibling = parent.createScope();
+    const nested = child.createScope();
+    sibling.register(SIBLING_VALUE, { useValue: 1 });
+    nested.register(NESTED_VALUE, { useValue: 1 });
+
+    const pending = child.resolveAsync(PENDING);
+    await started;
+
+    for (const mutation of [
+      () => parent.rebind(PENDING, { useValue: {} }),
+      () => sibling.unregister(SIBLING_VALUE),
+      () => nested.rebind(NESTED_VALUE, { useValue: 2 }),
+    ]) {
+      expect(mutation).toThrow(
+        expect.objectContaining({ code: "CONTAINER_BUSY" }),
+      );
+    }
+
+    release();
+    await expect(pending).rejects.toMatchObject({ code: "PROVIDER_FAILED" });
+
+    expect(parent.rebind(PENDING, { useValue: {} })).toBe(parent);
+    expect(sibling.unregister(SIBLING_VALUE)).toBe(true);
+    expect(nested.rebind(NESTED_VALUE, { useValue: 2 })).toBe(nested);
+    expect(nested.resolve(NESTED_VALUE)).toBe(2);
+  });
+
+  test("rejects mutation after disposal with stable registration errors", () => {
+    const VALUE = token<number>("VALUE");
+    const container = new Container();
+    container.register(VALUE, { useValue: 1 });
+    container.dispose();
+
+    for (const mutation of [
+      () => container.rebind(VALUE, { useValue: 2 }),
+      () => container.unregister(VALUE),
+    ]) {
+      try {
+        mutation();
+        throw new Error("Expected mutation to fail");
+      } catch (error) {
+        expect(error).toBeInstanceOf(RegistrationError);
+        expect((error as RegistrationError).code).toBe("CONTAINER_DISPOSED");
+      }
+    }
+  });
+});

@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+out/
+build/
+
+# Test / coverage
+coverage/
+
+# Packaging
+*.tgz
+.package-smoke-*/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
