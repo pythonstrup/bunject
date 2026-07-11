@@ -3880,7 +3880,7 @@ function assertDependency(
   value: unknown,
   owner: AnyToken,
 ): asserts value is AnyDependency {
-  if (typeof value === "function" || typeof value === "symbol") return;
+  if (typeof value === "symbol" || isConstructible(value)) return;
   if (
     typeof value === "object" &&
     value !== null &&
@@ -3895,7 +3895,7 @@ function assertDependency(
       (descriptor[dependencyDescriptorType] === "optional" ||
         descriptor[dependencyDescriptorType] === "all" ||
         descriptor[dependencyDescriptorType] === "lazy") &&
-      (typeof descriptor.token === "function" || typeof descriptor.token === "symbol")
+      (typeof descriptor.token === "symbol" || isConstructible(descriptor.token))
     ) {
       return;
     }

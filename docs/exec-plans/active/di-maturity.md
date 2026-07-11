@@ -31,7 +31,7 @@ Ecosystem adoption and battle-testing remain external evidence.
 - Packed consumers now run the same concurrent async-context, error-path,
   singleton-coalescing, scope, and disposal scenario under Bun and Node. Deno
   2.0.0 and 2.8.1 pass type, standard-decorator, and runtime checks locally.
-- Bun 1.3.10 passes the source typecheck, all 163 tests, and the installed
+- Bun 1.3.10 passes the source typecheck, all 164 tests, and the installed
   packed-consumer smoke locally.
 - Container and Resolver optional sync/async resolution preserve every visible
   provider failure and track absent dynamic edges for cache invalidation.
@@ -66,7 +66,8 @@ Ecosystem adoption and battle-testing remain external evidence.
 - Optional resolution represents absence as `undefined` but never translates a
   visible provider error; use `has()` when `T` itself can be `undefined` and
   presence must be distinguished.
-- Function tokens and `useClass` values must be constructible at registration.
+- Function tokens, `useClass` values, and dependency tuples must contain only
+  constructible class functions at registration.
 - Defer token-level observers until a consumer can state whether it needs
   cache-hit events, hierarchy propagation, value transformation, async hooks,
   and callback lifetime. Inversify activation and TSyringe interception do not
@@ -178,3 +179,6 @@ Ecosystem adoption and battle-testing remain external evidence.
   P0, P1, or P2 finding in the changed surface.
 - 2026-07-11: committed the mutation-model and repository-harness baseline as
   `62a3ffa`.
+- 2026-07-11: rejected non-constructible functions in direct and descriptor
+  dependency tuples at registration and reran all 164 tests, the harness, and
+  the installed packed-consumer smoke under Bun 1.3.10.

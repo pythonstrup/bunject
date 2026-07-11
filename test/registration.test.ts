@@ -3,6 +3,7 @@ import {
   Container,
   RegistrationError,
   Injectable,
+  optional,
   token,
   type Scope,
 } from "../src/index";
@@ -10,6 +11,10 @@ import {
 describe("registration validation", () => {
   test("reports stable registration error codes", () => {
     const TOKEN = token<number>("TOKEN");
+    const invalidOptional = {
+      ...optional(class Dependency {}),
+      token: () => ({}),
+    };
     const invalidCases: Array<{
       readonly code: RegistrationError["code"];
       readonly register: (container: Container) => unknown;
@@ -74,6 +79,22 @@ describe("registration validation", () => {
         register: (container) =>
           (container as any).register(TOKEN, {
             inject: [{}],
+            useFactory: () => 1,
+          }),
+      },
+      {
+        code: "INVALID_TOKEN",
+        register: (container) =>
+          (container as any).register(TOKEN, {
+            inject: [() => ({})],
+            useFactory: () => 1,
+          }),
+      },
+      {
+        code: "INVALID_TOKEN",
+        register: (container) =>
+          (container as any).register(TOKEN, {
+            inject: [invalidOptional],
             useFactory: () => 1,
           }),
       },

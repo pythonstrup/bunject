@@ -20,8 +20,8 @@ This project follows [Semantic Versioning](https://semver.org/).
   peer benchmark harnesses.
 - Minimum-Bun package consumption, Node async-context/lifecycle coverage, and
   Deno 2.0.0/latest type-checked standard-decorator coverage.
-- Registration-time rejection of non-constructible class tokens/providers and
-  an executable Bun HTTP request-scope example.
+- Registration-time rejection of non-constructible class tokens, providers,
+  and dependency tuples, plus an executable Bun HTTP request-scope example.
 - Versioned agent map, architecture, execution plan, and mechanical repository
   harness based on repository-local, agent-readable feedback, plus a public API
   reference, knowledge reachability, reference/anchor and packed-document link
