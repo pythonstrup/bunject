@@ -22,7 +22,7 @@ Reference implementations:
 - [x] Typed class/symbol tokens, checked dependency tuples, and reusable
   `defineProvider()` definitions
 - [x] Standard decorators without reflect metadata or global registration
-- [x] Multi-binding and sync/async `resolveAll`
+- [x] Multi-binding and nearest or opt-in chained sync/async `resolveAll`
 - [x] Optional, all, and lifetime-safe lazy descriptors
 - [x] First-class optional sync/async resolution on containers and resolvers
 - [x] Read-only activation-scoped resolver for availability and dynamic
@@ -65,7 +65,7 @@ callers may still hold.
 - [x] Pinned TypeScript 5.4 and current TypeScript source and packed-consumer checks
 - [x] Minimum Bun 1.3.10 and latest Bun jobs
 - [x] Minimum Bun npm-packed sync/async consumer smoke
-- [x] Local Bun 1.3.10 type, 164-test, and packed-consumer verification
+- [x] Local Bun 1.3.10 type, 174-test, and packed-consumer verification
 - [x] Packed tarball install plus isolated NodeNext, Bun, Node, declaration,
   and packaged-document link smoke
 - [x] Release publication lints and consumes the exact tarball passed to npm

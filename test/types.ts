@@ -11,6 +11,7 @@ import {
   type DefinedProvider,
   type InjectionToken,
   type Lazy,
+  type MultiResolutionOptions,
   type Provider,
   type Resolver,
   type Token,
@@ -258,8 +259,12 @@ container.registerMulti(CACHE, { useFactory: () => new Database() });
 const DESCRIPTORS = token<
   readonly [Database | undefined, readonly Cache[], Lazy<Database>]
 >("DESCRIPTORS");
+const chainedOptions: MultiResolutionOptions = { chained: true };
+const chainedCaches = all(CACHE, chainedOptions);
+const chainedFlag: boolean = chainedCaches.chained;
+void chainedFlag;
 container.register(DESCRIPTORS, {
-  inject: [optional(DATABASE), all(CACHE), lazy(DATABASE)],
+  inject: [optional(DATABASE), chainedCaches, lazy(DATABASE)],
   useFactory: (database, caches, deferredDatabase) => {
     database?.query();
     caches[0]?.get();
@@ -278,24 +283,50 @@ container.register(ACTIVE_RESOLVER, {
     const optionalDatabase: Database | undefined =
       activeResolver.resolveOptional(DATABASE);
     const allCaches: readonly Cache[] = activeResolver.resolveAll(CACHE);
+    const chainedCaches: readonly Cache[] = activeResolver.resolveAll(
+      CACHE,
+      chainedOptions,
+    );
     const pending: Promise<Database> = activeResolver.resolveAsync(DATABASE);
     const pendingOptional: Promise<Database | undefined> =
       activeResolver.resolveOptionalAsync(DATABASE);
     const pendingAll: Promise<readonly Cache[]> =
       activeResolver.resolveAllAsync(CACHE);
+    const pendingChained: Promise<readonly Cache[]> =
+      activeResolver.resolveAllAsync(CACHE, chainedOptions);
     void resolved;
     void optionalDatabase;
     void available;
     void own;
     void allCaches;
+    void chainedCaches;
     void pending;
     void pendingOptional;
     void pendingAll;
+    void pendingChained;
     // @ts-expect-error a Resolver cannot mutate its container
     activeResolver.register(DATABASE, { useValue: new Database() });
     return activeResolver;
   },
 });
+
+const directChained: readonly Cache[] = container.resolveAll(
+  CACHE,
+  chainedOptions,
+);
+const directChainedAsync: Promise<readonly Cache[]> =
+  container.resolveAllAsync(CACHE, chainedOptions);
+container.validate(CACHE, { all: true, chained: true });
+container.inspect(CACHE, chainedOptions);
+void directChained;
+void directChainedAsync;
+
+// @ts-expect-error chained must be boolean
+all(CACHE, { chained: "yes" });
+// @ts-expect-error resolveAll accepts only multi-resolution options
+container.resolveAll(CACHE, { own: true });
+// @ts-expect-error validate chained must be boolean
+container.validate(CACHE, { all: true, chained: "yes" });
 
 @Injectable({ inject: [resolver()] })
 class ResolverConsumer {

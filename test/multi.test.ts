@@ -3,6 +3,7 @@ import {
   Container,
   RegistrationError,
   ResolutionError,
+  all,
   token,
 } from "../src/index";
 
@@ -96,17 +97,114 @@ describe("multi bindings", () => {
     expect(creations).toBe(2);
   });
 
-  test("a local binding set shadows the complete parent set", () => {
+  test("keeps nearest shadowing by default and chains child-to-parent across modes", () => {
     const VALUE = token<number>("VALUE");
+    const root = new Container();
+    root.registerMulti(VALUE, { useValue: 1 });
+    root.registerMulti(VALUE, { useValue: 2 });
+    const parent = root.createScope();
+    parent.register(VALUE, { useValue: 3 });
+    const child = parent.createScope();
+    child.registerMulti(VALUE, { useValue: 4 });
+    child.registerMulti(VALUE, { useValue: 5 });
+
+    expect(child.resolveAll(VALUE)).toEqual([4, 5]);
+    expect(child.resolveAll(VALUE, { chained: true })).toEqual([4, 5, 3, 1, 2]);
+  });
+
+  test("preflights and coalesces async chained bindings across levels", async () => {
+    const VALUE = token<{ readonly source: string }>("VALUE");
+    let childCreations = 0;
+    let parentCreations = 0;
+    const parent = new Container();
+    parent.registerMulti(VALUE, {
+      scope: "singleton",
+      useFactoryAsync: async () => {
+        parentCreations += 1;
+        await Bun.sleep(5);
+        return { source: "parent" };
+      },
+    });
+    const child = parent.createScope();
+    child.registerMulti(VALUE, {
+      scope: "singleton",
+      useFactory: () => {
+        childCreations += 1;
+        return { source: "child" };
+      },
+    });
+
+    expect(() => child.resolveAll(VALUE, { chained: true })).toThrow(
+      expect.objectContaining({ code: "ASYNC_IN_SYNC" }),
+    );
+    expect(childCreations).toBe(0);
+    expect(parentCreations).toBe(0);
+
+    const [first, second] = await Promise.all([
+      child.resolveAllAsync(VALUE, { chained: true }),
+      child.resolveAllAsync(VALUE, { chained: true }),
+    ]);
+    expect(first.map(({ source }) => source)).toEqual(["child", "parent"]);
+    expect(second[0]).toBe(first[0]);
+    expect(second[1]).toBe(first[1]);
+    expect(childCreations).toBe(1);
+    expect(parentCreations).toBe(1);
+  });
+
+  test("preflights cross-set cycles before constructing an earlier binding", () => {
+    const VALUE = token<number>("VALUE");
+    let creations = 0;
+    const parent = new Container();
+    parent.register(VALUE, {
+      inject: [VALUE],
+      useFactory: (value) => value,
+    });
+    const child = parent.createScope();
+    child.register(VALUE, {
+      useFactory: () => {
+        creations += 1;
+        return 1;
+      },
+    });
+
+    expect(() => child.resolveAll(VALUE, { chained: true })).toThrow(
+      expect.objectContaining({ code: "CIRCULAR", path: [VALUE, VALUE] }),
+    );
+    expect(creations).toBe(0);
+  });
+
+  test("turns async chained-option failures into Promise rejections", async () => {
+    const VALUE = token<number>("VALUE");
+    const failure = new Error("options failed");
+    const options = Object.defineProperty({}, "chained", {
+      get() {
+        throw failure;
+      },
+    });
+    const operation = new Container().resolveAllAsync(VALUE, options);
+
+    expect(operation).toBeInstanceOf(Promise);
+    await expect(operation).rejects.toBe(failure);
+  });
+
+  test("all descriptors preserve explicit chained intent", () => {
+    const VALUE = token<number>("VALUE");
+    const ROOT = token<readonly number[]>("ROOT");
+    const nearest = all(VALUE);
+    const chained = all(VALUE, { chained: true });
     const parent = new Container();
     parent.registerMulti(VALUE, { useValue: 1 });
-    parent.registerMulti(VALUE, { useValue: 2 });
     const child = parent.createScope();
+    child.registerMulti(VALUE, { useValue: 2 });
+    child.register(ROOT, {
+      inject: [chained],
+      useFactory: (values) => values,
+    });
 
-    expect(child.resolveAll(VALUE)).toEqual([1, 2]);
-    child.registerMulti(VALUE, { useValue: 3 });
-    expect(child.resolveAll(VALUE)).toEqual([3]);
-    expect(parent.resolveAll(VALUE)).toEqual([1, 2]);
+    expect(nearest.chained).toBe(false);
+    expect(chained.chained).toBe(true);
+    expect(Object.isFrozen(chained)).toBe(true);
+    expect(child.resolve(ROOT)).toEqual([2, 1]);
   });
 
   test("a single alias to a multi target remains ambiguous", () => {

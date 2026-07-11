@@ -12,6 +12,8 @@ This project follows [Semantic Versioning](https://semver.org/).
   and an activation-scoped read-only Resolver with registration queries.
 - Required and optional sync/async resolution for containers and injected
   resolvers, preserving graph failures when a provider is registered.
+- Opt-in child-to-root chained multi-resolution across containers, resolvers,
+  all-dependency descriptors, validation, inspection, and safe mutation.
 - Reusable, dependency-checked provider definitions through `defineProvider()`.
 - Sync/async resolution, deterministic disposal, activation hooks, graph
   inspection, atomic modules, safe local mutation, and provider cleanup adapters.
@@ -21,7 +23,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 - Minimum-Bun package consumption, Node async-context/lifecycle coverage, and
   Deno 2.0.0/latest type-checked standard-decorator coverage.
 - Registration-time rejection of non-constructible class tokens, providers,
-  and dependency tuples, plus an executable Bun HTTP request-scope example.
+  and dependency tuples, plus immutable snapshots of dependency descriptors
+  and an executable Bun HTTP request-scope example.
 - Versioned agent map, architecture, execution plan, and mechanical repository
   harness based on repository-local, agent-readable feedback, plus a public API
   reference, knowledge reachability, reference/anchor and packed-document link

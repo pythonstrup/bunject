@@ -118,6 +118,11 @@ describe("graph inspection", () => {
       "all",
       "lazy",
     ]);
+    expect(graph.providers[0]?.dependencies[2]).toEqual({
+      token: MANY,
+      kind: "all",
+      chained: false,
+    });
     expect(graph.missing).toEqual([]);
     expect(constructions).toBe(0);
     expect(Object.isFrozen(graph)).toBe(true);
@@ -125,6 +130,38 @@ describe("graph inspection", () => {
 
     container.unregister(REQUIRED);
     expect(container.inspect(ROOT).missing).toEqual([REQUIRED]);
+  });
+
+  test("preflights and inspects every explicitly chained binding set", () => {
+    const ITEM = token<number>("ITEM");
+    const MISSING = token<number>("MISSING");
+    const parent = new Container();
+    parent.registerMulti(ITEM, {
+      inject: [MISSING],
+      useFactory: (value) => value,
+    });
+    const child = parent.createScope();
+    child.registerMulti(ITEM, { useValue: 1 });
+
+    expect(() => child.validate(ITEM, { all: true })).not.toThrow();
+    expect(() => child.validate(ITEM, { chained: true })).toThrow(TypeError);
+    expect(child.inspect(ITEM).providers.map(({ owner }) => owner)).toEqual([
+      child,
+    ]);
+
+    const chained = child.inspect(ITEM, { chained: true });
+    expect(chained.providers.map(({ owner }) => owner)).toEqual([child, parent]);
+    expect(chained.missing).toEqual([MISSING]);
+    expect(() =>
+      child.validate(ITEM, { all: true, chained: true }),
+    ).toThrow(
+      expect.objectContaining({ code: "NOT_FOUND", path: [ITEM, MISSING] }),
+    );
+
+    parent.register(MISSING, { useValue: 2 });
+    expect(() =>
+      child.validate(ITEM, { all: true, chained: true }),
+    ).not.toThrow();
   });
 
   test("distinguishes local registration from inherited availability", () => {

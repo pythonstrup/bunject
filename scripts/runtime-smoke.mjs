@@ -3,6 +3,7 @@ const delay = (milliseconds) =>
 
 export async function runRuntimeSmoke({
   Container,
+  all,
   defineProvider,
   resolver,
   token,
@@ -11,6 +12,7 @@ export async function runRuntimeSmoke({
   const MISSING = token("MISSING");
   const RESOLUTION_VALUE = token("RESOLUTION_VALUE");
   const ASYNC_SINGLETON = token("ASYNC_SINGLETON");
+  const CHAINED_VALUES = token("CHAINED_VALUES");
   const FIRST_ROOT = token("FIRST_ROOT");
   const SECOND_ROOT = token("SECOND_ROOT");
   const RESOURCE = token("RESOURCE");
@@ -32,6 +34,10 @@ export async function runRuntimeSmoke({
       return {};
     },
   }));
+  container.register(CHAINED_VALUES, defineProvider()({
+    inject: [all(VALUE, { chained: true })],
+    useFactory: (values) => values,
+  }));
 
   const registerRoot = (root, milliseconds) => {
     container.register(root, defineProvider()({
@@ -42,6 +48,12 @@ export async function runRuntimeSmoke({
         await delay(milliseconds);
         const after = activeResolver.resolve(RESOLUTION_VALUE);
         const singleton = await singletonPromise;
+        const chainedValues = activeResolver.resolveAll(VALUE, {
+          chained: true,
+        });
+        const chainedValuesAsync = await activeResolver.resolveAllAsync(VALUE, {
+          chained: true,
+        });
         let path;
         try {
           activeResolver.resolve(MISSING);
@@ -51,6 +63,8 @@ export async function runRuntimeSmoke({
         return {
           available: activeResolver.has(VALUE),
           before,
+          chainedValues,
+          chainedValuesAsync,
           after,
           path,
           singleton,
@@ -75,6 +89,7 @@ export async function runRuntimeSmoke({
     scope.resolveAsync(FIRST_ROOT),
     scope.resolveAsync(SECOND_ROOT),
   ]);
+  const injectedValues = scope.resolve(CHAINED_VALUES);
   scope.resolve(RESOURCE);
 
   if (
@@ -82,6 +97,9 @@ export async function runRuntimeSmoke({
     !second.available ||
     first.value !== 21 ||
     second.value !== 21 ||
+    first.chainedValues?.join(",") !== "21,42" ||
+    first.chainedValuesAsync?.join(",") !== "21,42" ||
+    injectedValues?.join(",") !== "21,42" ||
     first.before !== first.after ||
     second.before !== second.after ||
     first.before === second.before ||

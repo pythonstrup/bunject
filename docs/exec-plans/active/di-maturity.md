@@ -11,10 +11,10 @@ Ecosystem adoption and battle-testing remain external evidence.
 ## Current evidence
 
 - Bun 1.3.14 and minimum Bun 1.3.10 are configured.
-- The complete local merge gate passes on the current worktree: 164 tests,
+- The complete local runtime and coverage suite passes: 174 tests,
   97.62% overall lines, and 100% kernel lines.
-- The verified runtime, public API, packaging, compatibility, and harness
-  baseline is committed through `62a3ffa`.
+- The latest committed runtime, packaging, compatibility, and harness baseline
+  is `36de642`; chained multi-resolution is the current reviewed worktree.
 - The activation-scoped `resolver()` descriptor and provider-level cleanup
   adapters have focused, type, coverage, packed-consumer, and combined-gate
   evidence.
@@ -31,10 +31,13 @@ Ecosystem adoption and battle-testing remain external evidence.
 - Packed consumers now run the same concurrent async-context, error-path,
   singleton-coalescing, scope, and disposal scenario under Bun and Node. Deno
   2.0.0 and 2.8.1 pass type, standard-decorator, and runtime checks locally.
-- Bun 1.3.10 passes the source typecheck, all 164 tests, and the installed
+- Bun 1.3.10 passes the source typecheck, all 174 tests, and the installed
   packed-consumer smoke locally.
 - Container and Resolver optional sync/async resolution preserve every visible
   provider failure and track absent dynamic edges for cache invalidation.
+- Opt-in chained multi-resolution aggregates child-to-root binding sets across
+  Container, Resolver, descriptors, validation, inspection, and mutation while
+  nearest-set shadowing remains the default.
 - Every exported declaration and public method group has IDE-visible TSDoc, and
   the Bun HTTP request-scope example is type-checked and executable.
 - The agent map, architecture record, active plan, and mechanical harness check
@@ -58,9 +61,9 @@ Ecosystem adoption and battle-testing remain external evidence.
 - Keep `load()` as atomic composition rather than a plugin lifecycle API.
   Binding/module handles and immediate deactivation stay additive follow-up
   work until a hot-reload or selective-unload use case justifies them.
-- Preserve local binding-set shadowing. Parent/child chained multi-resolution
-  remains an additive option until a concrete shared-hook aggregation use case
-  justifies changing every multi-resolution surface consistently.
+- Preserve local binding-set shadowing by default. Opt-in chained
+  multi-resolution supports root-level common hooks plus feature/request hooks,
+  ordered child-to-parent with local registration order preserved.
 - Use `defineProvider<T>()` for stored dependency-bearing definitions instead
   of weakening `Provider<T>` or its negative type checks.
 - Optional resolution represents absence as `undefined` but never translates a
@@ -78,13 +81,11 @@ Ecosystem adoption and battle-testing remain external evidence.
 
 ## In progress
 
-- Add opt-in chained parent/child multi-resolution across every affected public
-  and mutation/validation surface while preserving current shadowing by default.
+- Verify and audit the chained multi-resolution surface across supported
+  runtimes, package consumers, declarations, and repository gates.
 
 ## Remaining work
 
-- Add opt-in chained parent/child multi-resolution only when a concrete
-  aggregation use case justifies its cross-cutting semantics.
 - Add token-level observers only after a concrete instrumentation consumer
   defines cache-hit, hierarchy, async, cardinality, and removal semantics.
 - Compare declarations against the previous published tarball after the first
@@ -188,3 +189,11 @@ Ecosystem adoption and battle-testing remain external evidence.
   and made release publication verify and publish the same packed tarball.
 - 2026-07-11: adversarially confirmed that an unshipped reference-style document
   target now fails the installed-tarball smoke before publication.
+- 2026-07-11: added opt-in chained child-to-root multi-resolution consistently
+  across Container and Resolver sync/async calls, `all()` descriptors,
+  validation, inspection, lifetime ownership, and mutation invalidation while
+  keeping nearest-set shadowing as the default.
+- 2026-07-11: hardened chained preflight, descriptor snapshots, async option
+  failures, and scoped cache retirement from four independent adversarial
+  findings; all 174 tests pass on Bun 1.3.10 and 1.3.14, both supported Deno
+  versions pass, and packed Bun/Node consumers pass.

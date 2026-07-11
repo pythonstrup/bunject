@@ -140,8 +140,9 @@ return handler.handle();
 ```
 
 Local registrations shadow the nearest parent set. Parent singletons keep
-owner-affine dependencies, while parent scoped and transient providers use the
-active child and its overrides. Disposing a parent disposes descendants first.
+owner-affine dependencies, while parent scoped, resolution, and transient
+providers use the active child and its overrides. Disposing a parent disposes
+descendants first.
 See the complete [Bun HTTP request-scope example](./docs/bun-http.md).
 
 ## Multi, optional, all, lazy, and resolver dependencies
@@ -157,11 +158,15 @@ container.register(APPLICATION, {
 });
 
 const hooks = container.resolveAll(HOOK);
+const inheritedHooks = requestScope.resolveAll(HOOK, { chained: true });
 ```
 
 `optional(T)` represents an absent binding as `undefined` without swallowing
-errors from a visible provider. `all(T)` returns the nearest complete binding
-set, including an empty array. `lazy(T)` returns a frozen
+errors from a visible provider. `all(T)` and `resolveAll(T)` return the nearest
+complete binding set by default, including an empty array. Pass
+`{ chained: true }` to either form to aggregate each local set from the active
+child through the root, preserving registration order within every set.
+`lazy(T)` returns a frozen
 `{ resolve, resolveAsync }` handle, defers construction and missing-token
 validation, and retains the lifetime constraints of its owner.
 
@@ -187,7 +192,8 @@ activation re-read the latest registry without making their holder depend on a
 future target, but retain the holder's captured lifetime and ownership limits.
 
 Single and multi registration modes cannot be mixed for one token in the same
-container. A local set shadows the complete parent set.
+container. A local set shadows the complete parent set unless that particular
+multi-resolution opts into chaining.
 
 ## Sync and async resolution
 
@@ -255,7 +261,9 @@ container.load(
 );
 
 container.validate(Application);
+container.validate(HOOK, { all: true, chained: true });
 const graph = container.inspect(Application);
+const inheritedGraph = requestScope.inspect(HOOK, { chained: true });
 
 container.rebind(CONFIG, { useValue: testConfig });
 container.unregister(CONFIG);
@@ -265,6 +273,7 @@ container.unregister(CONFIG);
 registry cannot resolve services or escape to lifecycle APIs. `inspect()`
 returns a frozen graph without construction; `validate()` performs the same
 sync/async, missing, cycle, ambiguity, and lifetime checks used by resolution.
+Chained validation is available only with `{ all: true, chained: true }`.
 
 `rebind()` and `unregister()` affect only local registrations. Cached values
 that captured the changed token through declared dependencies or dynamic

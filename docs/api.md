@@ -43,7 +43,7 @@ An `inject` tuple accepts direct tokens and the following frozen descriptors:
 | --- | --- | --- |
 | `TOKEN` | `T` | Requires exactly one provider. |
 | `optional(TOKEN)` | `T \| undefined` | Absence yields `undefined`; an ambiguous or failing provider still fails. |
-| `all(TOKEN)` | `readonly T[]` | Resolves the nearest complete binding set in registration order; returns `[]` when absent. |
+| `all(TOKEN, options?)` | `readonly T[]` | Resolves the nearest complete binding set by default; `{ chained: true }` aggregates child-to-root sets. Absence yields `[]`. |
 | `lazy(TOKEN)` | `Lazy<T>` | Injects frozen `resolve()` and `resolveAsync()` functions and defers target construction and missing-token validation. |
 | `resolver()` | `Resolver` | Injects a frozen token-agnostic resolver with single and multi, sync and async methods. |
 
@@ -64,8 +64,14 @@ interface Resolver {
   readonly resolveOptionalAsync: <T>(
     token: Token<T>,
   ) => Promise<T | undefined>;
-  readonly resolveAll: <T>(token: Token<T>) => readonly T[];
-  readonly resolveAllAsync: <T>(token: Token<T>) => Promise<readonly T[]>;
+  readonly resolveAll: <T>(
+    token: Token<T>,
+    options?: MultiResolutionOptions,
+  ) => readonly T[];
+  readonly resolveAllAsync: <T>(
+    token: Token<T>,
+    options?: MultiResolutionOptions,
+  ) => Promise<readonly T[]>;
 }
 ```
 
@@ -76,7 +82,9 @@ preserving the holder's ownership limits.
 
 The exported descriptor types are `OptionalDependency<T>`, `AllDependency<T>`,
 `LazyDependency<T>`, and `ResolverDependency`. Their union with `Token<T>` is
-`Dependency<T>`.
+`Dependency<T>`. A frozen `AllDependency<T>` exposes a
+`readonly chained: boolean` field; it is `false` unless
+`all(token, { chained: true })` is used.
 
 ### Type utilities
 
@@ -285,6 +293,8 @@ Provider registration mutation is rejected while the affected container is
 resolving a dependency graph or its container family is already mutating.
 Changed dependencies invalidate affected caches; retired owned resources stay
 valid for existing callers and are cleaned up with their owning scope.
+An ancestor mutation invalidates caches that captured a chained multi-lookup;
+ordinary nearest lookups remain shielded by a local shadowing set.
 For live reconfiguration, rotate to a freshly built root and dispose the old
 root after its callers drain; mutation is not an immediate deactivation API.
 
@@ -296,19 +306,29 @@ root after its callers drain; mutation is not an immediate deactivation API.
 | `resolveOptional<T>(token)` | `T \| undefined` | Absence yields `undefined`; a visible provider resolves normally. |
 | `resolveAsync<T>(token)` | `Promise<T>` | Resolves sync or async providers. Concurrent requests coalesce each cached provider. |
 | `resolveOptionalAsync<T>(token)` | `Promise<T \| undefined>` | Async optional resolution; registered-provider errors are preserved. |
-| `resolveAll<T>(token)` | `readonly T[]` | Resolves the nearest binding set synchronously; absent means `[]`. |
-| `resolveAllAsync<T>(token)` | `Promise<readonly T[]>` | Async form of `resolveAll`. |
+| `resolveAll<T>(token, options?)` | `readonly T[]` | Resolves the nearest binding set by default; `{ chained: true }` aggregates every child-to-root set. Absence means `[]`. |
+| `resolveAllAsync<T>(token, options?)` | `Promise<readonly T[]>` | Async form of `resolveAll` with the same hierarchy options. |
 | `has<T>(token, { own? })` | `boolean` | Searches the visible hierarchy by default; `{ own: true }` checks only local registrations. The injected `Resolver` exposes the same read-only query. |
-| `validate<T>(token, { async?, all? })` | `void` | Checks the graph without construction. Defaults to sync/single semantics. |
-| `inspect<T>(token)` | `DependencyGraph` | Returns a frozen, construction-free graph description. |
+| `validate<T>(token, { async?, all?, chained? })` | `void` | Checks the graph without construction. Defaults to sync/single semantics. |
+| `inspect<T>(token, options?)` | `DependencyGraph` | Returns a frozen, construction-free graph description; `{ chained: true }` expands every root binding set. |
 | `disposed` | `boolean` | `true` once sync or async disposal has started. |
 
 `ValidationOptions.async: true` permits async providers. `all: true` validates
 every binding in the nearest set and gives absent tokens the same valid-empty
-semantics as `resolveAll()`.
+semantics as `resolveAll()`. `{ all: true, chained: true }` validates every
+child-to-root set; `chained: true` without `all: true` throws `TypeError`.
 
-`RegistrationQueryOptions` is `{ own?: boolean }`. `ValidationOptions` is
-`{ async?: boolean; all?: boolean }`.
+`RegistrationQueryOptions` is `{ own?: boolean }`, `MultiResolutionOptions` is
+`{ chained?: boolean }`, and `ValidationOptions` is
+`{ async?: boolean; all?: boolean; chained?: boolean }`.
+
+Nearest lookup preserves local shadowing. Chained lookup visits the active
+container, then each parent through the root, and keeps registration order
+within each local single or multi set. It uses one resolution graph for the
+complete result. An alias contributes one result and resolves its target with
+ordinary nearest single-binding semantics. Parent singletons remain
+registration-owner-affine; parent scoped, resolution, and transient providers
+are activated and owned by the requesting child.
 
 Sync validation and resolution reject the complete eager graph before
 construction when it contains an async provider. Deferred lazy/resolver targets
@@ -346,12 +366,15 @@ interface InspectedProvider {
 `ProviderKind` is `"class" | "value" | "factory" | "asyncFactory" |
 "existing"`. `DependencyKind` is `"required" | "optional" | "all" | "lazy" |
 "resolver"`. Every inspected dependency except `resolver` includes its
-`token`; a resolver dependency is `{ kind: "resolver" }`.
+`token`; an all edge is `{ kind: "all", token, chained: boolean }`, and a
+resolver dependency is `{ kind: "resolver" }`.
 
 Inspection traverses required, optional, and all dependencies without running
-providers. It records missing required tokens, does not report absent optional
-or all targets as missing, and does not traverse deferred `lazy` or dynamic
-`resolver` targets.
+providers. Chaining on `inspect(root, { chained: true })` applies to the root;
+each nested all edge uses its own descriptor flag, and each provider's binding
+index is local to its reported owner. Inspection records missing required
+tokens, does not report absent optional or all targets as missing, and does not
+traverse deferred `lazy` or dynamic `resolver` targets.
 
 ## Errors
 
@@ -436,8 +459,9 @@ providers, active resolution, or async-only resources.
 
 - `resolve()`, `resolveOptional()`, and `resolveAll()` are strictly synchronous;
   their async forms can resolve both sync and async providers.
-- A local binding set shadows the complete parent set; hierarchy lookup never
-  merges parent and child multi-bindings.
+- A local binding set shadows the complete parent set by default. Chained
+  multi-resolution is explicit on each `resolveAll`, `all`, validation, or
+  inspection request.
 - Singleton activation is registration-owner-affine. Other lifetimes use the
   active resolving container and may see child overrides.
 - Dynamic provider lookup may target the activation container or an ancestor,

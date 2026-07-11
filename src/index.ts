@@ -40,10 +40,11 @@ export interface OptionalDependency<T> {
   readonly token: Token<T>;
 }
 
-/** Frozen descriptor for every binding in the nearest visible set. */
+/** Frozen descriptor for every binding selected by its multi-resolution mode. */
 export interface AllDependency<T> {
   readonly [dependencyDescriptorType]: "all";
   readonly token: Token<T>;
+  readonly chained: boolean;
 }
 
 /** Frozen descriptor for deferred resolution of one token. */
@@ -82,10 +83,16 @@ export interface Resolver {
   readonly resolveOptionalAsync: <T>(
     token: Token<T>,
   ) => Promise<T | undefined>;
-  /** Resolves the nearest complete binding set synchronously. */
-  readonly resolveAll: <T>(token: Token<T>) => readonly T[];
-  /** Resolves the nearest complete binding set asynchronously. */
-  readonly resolveAllAsync: <T>(token: Token<T>) => Promise<readonly T[]>;
+  /** Resolves the selected complete binding sets synchronously. */
+  readonly resolveAll: <T>(
+    token: Token<T>,
+    options?: MultiResolutionOptions,
+  ) => readonly T[];
+  /** Resolves the selected complete binding sets asynchronously. */
+  readonly resolveAllAsync: <T>(
+    token: Token<T>,
+    options?: MultiResolutionOptions,
+  ) => Promise<readonly T[]>;
 }
 
 /** Token or descriptor accepted in an explicit injection tuple. */
@@ -175,10 +182,16 @@ export interface InjectableOptionsWithInject<
   readonly inject: TDependencies;
 }
 
+/** Selects nearest-set or child-to-root multi-resolution. */
+export interface MultiResolutionOptions {
+  readonly chained?: boolean;
+}
+
 /** Selects sync/async and single/all graph preflight semantics. */
 export interface ValidationOptions {
   readonly async?: boolean;
   readonly all?: boolean;
+  readonly chained?: boolean;
 }
 
 /** Controls inherited versus local-only registration queries. */
@@ -236,7 +249,12 @@ export type DependencyKind =
 export type InspectedDependency =
   | {
       readonly token: Token<any>;
-      readonly kind: Exclude<DependencyKind, "resolver">;
+      readonly kind: Exclude<DependencyKind, "all" | "resolver">;
+    }
+  | {
+      readonly token: Token<any>;
+      readonly kind: "all";
+      readonly chained: boolean;
     }
   | {
       readonly token?: never;
@@ -596,6 +614,7 @@ interface Construction {
 const RUNTIME_DEPENDENCY_RESOLVE = 1;
 const RUNTIME_DEPENDENCY_HAS = 2;
 const RUNTIME_DEPENDENCY_HAS_OWN = 4;
+const RUNTIME_DEPENDENCY_RESOLVE_CHAINED = 8;
 type RuntimeDependencies = Map<Container, Map<AnyToken, number>>;
 const runtimeDependencyParents = new WeakMap<
   RuntimeDependencies,
@@ -683,12 +702,16 @@ export function optional<T>(target: Token<T>): OptionalDependency<T> {
   });
 }
 
-/** Declares all bindings in the nearest visible binding set. */
-export function all<T>(target: Token<T>): AllDependency<T> {
+/** Declares all bindings selected by nearest or chained lookup. */
+export function all<T>(
+  target: Token<T>,
+  options: MultiResolutionOptions = {},
+): AllDependency<T> {
   assertToken(target);
   return Object.freeze({
     [dependencyDescriptorType]: "all" as const,
     token: target,
+    chained: options.chained === true,
   });
 }
 
@@ -840,6 +863,8 @@ export class Container implements Disposable, AsyncDisposable {
   readonly #validatedAsync = new Set<AnyToken>();
   readonly #validatedAllSync = new Set<AnyToken>();
   readonly #validatedAllAsync = new Set<AnyToken>();
+  readonly #validatedChainedAllSync = new Set<AnyToken>();
+  readonly #validatedChainedAllAsync = new Set<AnyToken>();
   readonly #children = new Set<Container>();
   readonly #owned: OwnedResource[] = [];
   readonly #ownedValues = new WeakSet<object>();
@@ -1283,20 +1308,32 @@ export class Container implements Disposable, AsyncDisposable {
     }
   }
 
-  /** Resolves the nearest complete binding set synchronously. */
-  resolveAll<T>(token: Token<T>): readonly T[] {
-    return this.#resolveAllPublicSync(token);
+  /** Resolves the selected complete binding sets synchronously. */
+  resolveAll<T>(
+    token: Token<T>,
+    options: MultiResolutionOptions = {},
+  ): readonly T[] {
+    return this.#resolveAllPublicSync(token, undefined, options);
   }
 
   #resolveAllPublicSync<T>(
     token: Token<T>,
     capturedCaptor?: LifetimeCaptor,
+    options: MultiResolutionOptions = {},
   ): readonly T[] {
     assertToken(token);
     this.#assertCanResolve(token);
+    const chained = options.chained === true;
     const context = this.#activeContext();
     this.#assertDynamicLookup(context, token);
-    recordDynamicDependency(context?.collector, this, token);
+    recordDynamicDependency(
+      context?.collector,
+      this,
+      token,
+      chained
+        ? RUNTIME_DEPENDENCY_RESOLVE | RUNTIME_DEPENDENCY_RESOLVE_CHAINED
+        : RUNTIME_DEPENDENCY_RESOLVE,
+    );
     const captor = strongerCaptor(context?.captor, capturedCaptor);
     const captors = captorConstraints(context?.captor, capturedCaptor);
     const session = context?.session ?? createResolutionSession();
@@ -1304,50 +1341,58 @@ export class Container implements Disposable, AsyncDisposable {
     const locked = this.#beginResolution();
     try {
       if (captors.length === 0) {
-        this.#validateGraph(token, true, true, undefined, ancestry);
+        this.#validateGraph(token, true, true, undefined, ancestry, chained);
       } else {
         for (const constraint of captors) {
-          this.#validateGraph(token, true, true, constraint, ancestry);
+          this.#validateGraph(token, true, true, constraint, ancestry, chained);
         }
       }
-      const bindings = this.#lookup(token);
-      if (!bindings) return [];
-      const path = enterPath(token, ancestry);
-      return bindings.bindings.map((registration) =>
-        this.#resolveRegistrationSync(
-          token,
-          registration,
-          path,
-          session,
-          captor,
-          context?.collector,
-        ),
+      return this.#resolveAllSync(
+        token,
+        ancestry,
+        session,
+        captor,
+        context?.collector,
+        chained,
       );
     } finally {
       this.#endResolution(locked);
     }
   }
 
-  /** Resolves the nearest complete binding set asynchronously. */
-  resolveAllAsync<T>(token: Token<T>): Promise<readonly T[]> {
-    return this.#resolveAllPublicAsync(token);
+  /** Resolves the selected complete binding sets asynchronously. */
+  resolveAllAsync<T>(
+    token: Token<T>,
+    options: MultiResolutionOptions = {},
+  ): Promise<readonly T[]> {
+    return this.#resolveAllPublicAsync(token, undefined, options);
   }
 
   #resolveAllPublicAsync<T>(
     token: Token<T>,
     capturedCaptor?: LifetimeCaptor,
+    options: MultiResolutionOptions = {},
   ): Promise<readonly T[]> {
     let context: ResolutionContext | undefined;
+    let chained: boolean;
     try {
       assertToken(token);
       this.#assertCanResolve(token);
       context = this.#activeContext();
       this.#assertDynamicLookup(context, token);
+      chained = options.chained === true;
     } catch (error) {
       return Promise.reject(error);
     }
 
-    recordDynamicDependency(context?.collector, this, token);
+    recordDynamicDependency(
+      context?.collector,
+      this,
+      token,
+      chained
+        ? RUNTIME_DEPENDENCY_RESOLVE | RUNTIME_DEPENDENCY_RESOLVE_CHAINED
+        : RUNTIME_DEPENDENCY_RESOLVE,
+    );
     const captor = strongerCaptor(context?.captor, capturedCaptor);
     const captors = captorConstraints(context?.captor, capturedCaptor);
     return this.#trackInFlight(
@@ -1356,6 +1401,7 @@ export class Container implements Disposable, AsyncDisposable {
         captor,
         captors,
         context?.collector,
+        chained,
       ),
     );
   }
@@ -1365,6 +1411,7 @@ export class Container implements Disposable, AsyncDisposable {
     captor?: LifetimeCaptor,
     captors: readonly LifetimeCaptor[] = captor ? [captor] : [],
     collector?: RuntimeDependencies,
+    chained = false,
   ): Promise<readonly T[]> {
     const context = this.#activeContext();
     const session = context?.session ?? createResolutionSession();
@@ -1372,29 +1419,20 @@ export class Container implements Disposable, AsyncDisposable {
     const locked = this.#beginResolution();
     try {
       if (captors.length === 0) {
-        this.#validateGraph(token, false, true, undefined, ancestry);
+        this.#validateGraph(token, false, true, undefined, ancestry, chained);
       } else {
         for (const constraint of captors) {
-          this.#validateGraph(token, false, true, constraint, ancestry);
+          this.#validateGraph(token, false, true, constraint, ancestry, chained);
         }
       }
-      const bindings = this.#lookup(token);
-      if (!bindings) return [];
-      const path = enterPath(token, ancestry);
-      const values: T[] = [];
-      for (const registration of bindings.bindings) {
-        values.push(
-          await this.#resolveRegistrationAsync(
-            token,
-            registration,
-            path,
-            session,
-            captor,
-            collector,
-          ),
-        );
-      }
-      return values;
+      return await this.#resolveAllAsync(
+        token,
+        ancestry,
+        session,
+        captor,
+        collector,
+        chained,
+      );
     } finally {
       this.#endResolution(locked);
     }
@@ -1430,17 +1468,24 @@ export class Container implements Disposable, AsyncDisposable {
   validate<T>(token: Token<T>, options: ValidationOptions = {}): void {
     assertToken(token);
     this.#assertCanResolve(token);
+    if (options.chained === true && options.all !== true) {
+      throw new TypeError("`chained` requires `all: true` in validate().");
+    }
     this.#validateGraph(
       token,
       options.async !== true,
       options.all === true,
       this.#activeContext()?.captor,
       this.#activeContext()?.path ?? [],
+      options.chained === true,
     );
   }
 
   /** Returns a frozen, side-effect-free view of the declared graph. */
-  inspect<T>(token: Token<T>): DependencyGraph {
+  inspect<T>(
+    token: Token<T>,
+    options: MultiResolutionOptions = {},
+  ): DependencyGraph {
     assertToken(token);
     this.#assertCanResolve(token);
 
@@ -1451,69 +1496,80 @@ export class Container implements Disposable, AsyncDisposable {
       target: AnyToken,
       lookup: Container,
       emptyIsMissing: boolean,
+      chained = false,
     ): void => {
-      const bindings = lookup.#lookup(target);
-      if (!bindings) {
+      const bindingSets = lookup.#lookupSets(target, chained);
+      if (bindingSets.length === 0) {
         if (emptyIsMissing) missing.add(target);
         return;
       }
 
-      for (const [binding, registration] of bindings.bindings.entries()) {
-        const scope = providerScope(registration.provider);
-        const effectiveLookup =
-          scope === "singleton" ? registration.owner : lookup;
-        let registrations = visited.get(effectiveLookup);
-        if (!registrations) {
-          registrations = new Set();
-          visited.set(effectiveLookup, registrations);
-        }
-        if (registrations.has(registration)) continue;
-        registrations.add(registration);
-
-        const dependencies =
-          registration.provider.kind === "value"
-            ? []
-            : registration.provider.inject.map<InspectedDependency>(
-                (dependency): InspectedDependency => {
-                  if (isResolverDependency(dependency)) {
-                    return Object.freeze({ kind: "resolver" });
-                  }
-                  return Object.freeze({
-                    token: isTokenDependencyDescriptor(dependency)
-                      ? dependency.token
-                      : dependency,
-                    kind: isTokenDependencyDescriptor(dependency)
-                      ? dependency[dependencyDescriptorType]
-                      : "required",
-                  });
-                },
-              );
-        providers.push(
-          Object.freeze({
-            token: target,
-            binding,
-            mode: bindings.mode,
-            kind: registration.provider.kind,
-            scope,
-            owner: registration.owner,
-            dependencies: Object.freeze(dependencies),
-          }),
-        );
-
-        for (const dependency of dependencies) {
-          if (dependency.kind === "lazy" || dependency.kind === "resolver") {
-            continue;
+      for (const bindings of bindingSets) {
+        for (const [binding, registration] of bindings.bindings.entries()) {
+          const scope = providerScope(registration.provider);
+          const effectiveLookup =
+            scope === "singleton" ? registration.owner : lookup;
+          let registrations = visited.get(effectiveLookup);
+          if (!registrations) {
+            registrations = new Set();
+            visited.set(effectiveLookup, registrations);
           }
-          visit(
-            dependency.token,
-            effectiveLookup,
-            dependency.kind === "required",
+          if (registrations.has(registration)) continue;
+          registrations.add(registration);
+
+          const dependencies =
+            registration.provider.kind === "value"
+              ? []
+              : registration.provider.inject.map<InspectedDependency>(
+                  (dependency): InspectedDependency => {
+                    if (isResolverDependency(dependency)) {
+                      return Object.freeze({ kind: "resolver" });
+                    }
+                    if (isTokenDependencyDescriptor(dependency, "all")) {
+                      return Object.freeze({
+                        token: dependency.token,
+                        kind: "all" as const,
+                        chained: dependency.chained,
+                      });
+                    }
+                    return Object.freeze({
+                      token: isTokenDependencyDescriptor(dependency)
+                        ? dependency.token
+                        : dependency,
+                      kind: isTokenDependencyDescriptor(dependency)
+                        ? dependency[dependencyDescriptorType]
+                        : "required",
+                    });
+                  },
+                );
+          providers.push(
+            Object.freeze({
+              token: target,
+              binding,
+              mode: bindings.mode,
+              kind: registration.provider.kind,
+              scope,
+              owner: registration.owner,
+              dependencies: Object.freeze(dependencies),
+            }),
           );
+
+          for (const dependency of dependencies) {
+            if (dependency.kind === "lazy" || dependency.kind === "resolver") {
+              continue;
+            }
+            visit(
+              dependency.token,
+              effectiveLookup,
+              dependency.kind === "required",
+              dependency.kind === "all" && dependency.chained,
+            );
+          }
         }
       }
     };
 
-    visit(token, this, true);
+    visit(token, this, true, options.chained === true);
     return Object.freeze({
       root: token,
       providers: Object.freeze(providers),
@@ -1701,11 +1757,16 @@ export class Container implements Disposable, AsyncDisposable {
     all = false,
     initialCaptor?: LifetimeCaptor,
     prefix: readonly AnyToken[] = [],
+    chained = false,
   ): void {
     const validated = all
-      ? synchronous
-        ? this.#validatedAllSync
-        : this.#validatedAllAsync
+      ? chained
+        ? synchronous
+          ? this.#validatedChainedAllSync
+          : this.#validatedChainedAllAsync
+        : synchronous
+          ? this.#validatedAllSync
+          : this.#validatedAllAsync
       : synchronous
         ? this.#validatedSync
         : this.#validatedAsync;
@@ -1722,8 +1783,6 @@ export class Container implements Disposable, AsyncDisposable {
 
     interface Frame {
       readonly token: AnyToken;
-      readonly registration: Registration;
-      readonly lookup: Container;
     }
     type VisitStates = Map<Container, Map<Registration, Set<string>>>;
     const states: VisitStates = new Map();
@@ -1772,57 +1831,78 @@ export class Container implements Disposable, AsyncDisposable {
       captor: LifetimeCaptor,
       path: readonly AnyToken[],
       visited: VisitStates,
+      allBindings = false,
+      chainedBindings = false,
     ): void => {
-      const bindings = lookup.#lookup(token);
-      if (!bindings) return;
-      for (const registration of bindings.bindings) {
-        const scope = providerScope(registration.provider);
-        const effectiveLookup =
-          scope === "singleton" ? registration.owner : lookup;
-        if (wasVisited(visited, effectiveLookup, registration, captor)) continue;
-        markVisited(visited, effectiveLookup, registration, captor);
+      const bindingSets = lookup.#lookupSets(
+        token,
+        allBindings && chainedBindings,
+      );
+      for (const bindings of bindingSets) {
+        for (const registration of bindings.bindings) {
+          const scope = providerScope(registration.provider);
+          const effectiveLookup =
+            scope === "singleton" ? registration.owner : lookup;
+          if (wasVisited(visited, effectiveLookup, registration, captor)) {
+            continue;
+          }
+          markVisited(visited, effectiveLookup, registration, captor);
 
-        let nextCaptor = captor;
-        if (
-          scope === "transient" &&
-          !effectiveLookup.#isAncestorOf(captor.domain)
-        ) {
-          throw resolutionError(
-            "CAPTIVE_DEPENDENCY",
-            `${tokenName(token)} (transient) cannot be captured by ` +
-              `${tokenName(captor.token)} (${captor.scope}).`,
-            path,
-          );
-        }
-        if (scope && scope !== "transient") {
-          const domain =
-            scope === "singleton" ? registration.owner : effectiveLookup;
-          const rank = lifetimeRank(scope);
-          if (rank < captor.rank || !domain.#isAncestorOf(captor.domain)) {
+          let nextCaptor = captor;
+          if (
+            scope === "transient" &&
+            !effectiveLookup.#isAncestorOf(captor.domain)
+          ) {
             throw resolutionError(
               "CAPTIVE_DEPENDENCY",
-              `${tokenName(token)} (${scope}) cannot be captured by ` +
+              `${tokenName(token)} (transient) cannot be captured by ` +
                 `${tokenName(captor.token)} (${captor.scope}).`,
               path,
             );
           }
-          nextCaptor = { token, scope, rank, domain };
-        }
+          if (scope && scope !== "transient") {
+            const domain =
+              scope === "singleton" ? registration.owner : effectiveLookup;
+            const rank = lifetimeRank(scope);
+            if (rank < captor.rank || !domain.#isAncestorOf(captor.domain)) {
+              throw resolutionError(
+                "CAPTIVE_DEPENDENCY",
+                `${tokenName(token)} (${scope}) cannot be captured by ` +
+                  `${tokenName(captor.token)} (${captor.scope}).`,
+                path,
+              );
+            }
+            nextCaptor = { token, scope, rank, domain };
+          }
 
-        if (registration.provider.kind === "value") continue;
-        for (const dependency of registration.provider.inject) {
-          if (isResolverDependency(dependency)) continue;
-          const dependencyToken = isTokenDependencyDescriptor(dependency)
-            ? dependency.token
-            : dependency;
-          if (!effectiveLookup.#lookup(dependencyToken)) continue;
-          validateLazyLifetime(
-            dependencyToken,
-            effectiveLookup,
-            nextCaptor,
-            [...path, dependencyToken],
-            visited,
-          );
+          if (registration.provider.kind === "value") continue;
+          for (const dependency of registration.provider.inject) {
+            if (isResolverDependency(dependency)) continue;
+            const dependencyToken = isTokenDependencyDescriptor(dependency)
+              ? dependency.token
+              : dependency;
+            const dependencyIsAll = isTokenDependencyDescriptor(
+              dependency,
+              "all",
+            );
+            const dependencyChained =
+              dependencyIsAll && dependency.chained;
+            if (
+              effectiveLookup.#lookupSets(
+                dependencyToken,
+                dependencyChained,
+              ).length === 0
+            ) continue;
+            validateLazyLifetime(
+              dependencyToken,
+              effectiveLookup,
+              nextCaptor,
+              [...path, dependencyToken],
+              visited,
+              dependencyIsAll,
+              dependencyChained,
+            );
+          }
         }
       }
     };
@@ -1836,10 +1916,7 @@ export class Container implements Disposable, AsyncDisposable {
     ): void => {
       const scope = providerScope(registration.provider);
       const effectiveLookup = scope === "singleton" ? registration.owner : lookup;
-      const cycleStart = stack.findIndex(
-        (frame) =>
-          frame.registration === registration && frame.lookup === effectiveLookup,
-      );
+      const cycleStart = stack.findIndex((frame) => frame.token === token);
       if (cycleStart !== -1) {
         const cycle = [
           ...stack.slice(cycleStart).map((frame) => frame.token),
@@ -1895,7 +1972,7 @@ export class Container implements Disposable, AsyncDisposable {
         nextCaptor = { token, scope, rank, domain };
       }
 
-      stack.push({ token, registration, lookup: effectiveLookup });
+      stack.push({ token });
       if (provider.kind !== "value") {
         for (const dependency of provider.inject) {
           if (isResolverDependency(dependency)) continue;
@@ -1920,11 +1997,13 @@ export class Container implements Disposable, AsyncDisposable {
           ) {
             continue;
           }
+          const allDependency = isTokenDependencyDescriptor(dependency, "all");
           visit(
             dependencyToken,
             effectiveLookup,
             nextCaptor,
-            isTokenDependencyDescriptor(dependency, "all"),
+            allDependency,
+            allDependency && dependency.chained,
           );
         }
       }
@@ -1937,14 +2016,18 @@ export class Container implements Disposable, AsyncDisposable {
       lookup: Container,
       captor?: LifetimeCaptor,
       allBindings = false,
+      chainedBindings = false,
     ): void => {
       const path = [
         ...prefix,
         ...stack.map((frame) => frame.token),
         token,
       ];
-      const bindings = lookup.#lookup(token);
-      if (!bindings) {
+      const bindingSets = lookup.#lookupSets(
+        token,
+        allBindings && chainedBindings,
+      );
+      if (bindingSets.length === 0) {
         if (allBindings) return;
         throw resolutionError(
           "NOT_FOUND",
@@ -1954,17 +2037,23 @@ export class Container implements Disposable, AsyncDisposable {
       }
 
       const registrations = allBindings
-        ? bindings.bindings
+        ? bindingSets.flatMap((bindings) => bindings.bindings)
         : [lookup.#lookupOne(token, path)!];
       for (const registration of registrations) {
         visitRegistration(token, registration, lookup, path, captor);
       }
     };
 
-    visit(root, this, initialCaptor, all);
+    visit(root, this, initialCaptor, all, chained);
     if (cacheable) validated.add(root);
     if (cacheable && synchronous) {
-      (all ? this.#validatedAllAsync : this.#validatedAsync).add(root);
+      (
+        all
+          ? chained
+            ? this.#validatedChainedAllAsync
+            : this.#validatedAllAsync
+          : this.#validatedAsync
+      ).add(root);
     }
   }
 
@@ -2343,6 +2432,7 @@ export class Container implements Disposable, AsyncDisposable {
         session,
         captor,
         collector,
+        dependency.chained,
       );
     }
     return this.#createLazyResolver(dependency.token, captor);
@@ -2379,6 +2469,7 @@ export class Container implements Disposable, AsyncDisposable {
         session,
         captor,
         collector,
+        dependency.chained,
       );
     }
     return this.#createLazyResolver(dependency.token, captor);
@@ -2401,10 +2492,14 @@ export class Container implements Disposable, AsyncDisposable {
         this.#resolvePublicAsync(target, captor),
       resolveOptionalAsync: <T>(target: Token<T>) =>
         this.#resolvePublicAsync(target, captor, true),
-      resolveAll: <T>(target: Token<T>) =>
-        this.#resolveAllPublicSync(target, captor),
-      resolveAllAsync: <T>(target: Token<T>) =>
-        this.#resolveAllPublicAsync(target, captor),
+      resolveAll: <T>(
+        target: Token<T>,
+        options?: MultiResolutionOptions,
+      ) => this.#resolveAllPublicSync(target, captor, options),
+      resolveAllAsync: <T>(
+        target: Token<T>,
+        options?: MultiResolutionOptions,
+      ) => this.#resolveAllPublicAsync(target, captor, options),
     });
   }
 
@@ -2424,20 +2519,25 @@ export class Container implements Disposable, AsyncDisposable {
     session: ResolutionSession,
     captor?: LifetimeCaptor,
     collector?: RuntimeDependencies,
+    chained = false,
   ): readonly T[] {
-    const bindings = this.#lookup(token);
-    if (!bindings) return [];
     const path = enterPath(token, ancestry);
-    return bindings.bindings.map((registration) =>
-      this.#resolveRegistrationSync(
-        token,
-        registration,
-        path,
-        session,
-        captor,
-        collector,
-      ),
-    );
+    const values: T[] = [];
+    for (const bindings of this.#lookupSets(token, chained)) {
+      for (const registration of bindings.bindings) {
+        values.push(
+          this.#resolveRegistrationSync(
+            token,
+            registration,
+            path,
+            session,
+            captor,
+            collector,
+          ),
+        );
+      }
+    }
+    return values;
   }
 
   async #resolveAllAsync<T>(
@@ -2446,22 +2546,23 @@ export class Container implements Disposable, AsyncDisposable {
     session: ResolutionSession,
     captor?: LifetimeCaptor,
     collector?: RuntimeDependencies,
+    chained = false,
   ): Promise<readonly T[]> {
-    const bindings = this.#lookup(token);
-    if (!bindings) return [];
     const path = enterPath(token, ancestry);
     const values: T[] = [];
-    for (const registration of bindings.bindings) {
-      values.push(
-        await this.#resolveRegistrationAsync(
-          token,
-          registration,
-          path,
-          session,
-          captor,
-          collector,
-        ),
-      );
+    for (const bindings of this.#lookupSets(token, chained)) {
+      for (const registration of bindings.bindings) {
+        values.push(
+          await this.#resolveRegistrationAsync(
+            token,
+            registration,
+            path,
+            session,
+            captor,
+            collector,
+          ),
+        );
+      }
     }
     return values;
   }
@@ -2762,6 +2863,19 @@ export class Container implements Disposable, AsyncDisposable {
     return undefined;
   }
 
+  #lookupSets(token: AnyToken, chained: boolean): readonly BindingSet[] {
+    if (!chained) {
+      const bindings = this.#lookup(token);
+      return bindings ? [bindings] : [];
+    }
+    const sets: BindingSet[] = [];
+    for (let current: Container | undefined = this; current; current = current.#parent) {
+      const bindings = current.#registrations.get(token);
+      if (bindings) sets.push(bindings);
+    }
+    return sets;
+  }
+
   #lookupOne(token: AnyToken, path: readonly AnyToken[]): Registration | undefined {
     const bindings = this.#lookup(token);
     if (!bindings) return undefined;
@@ -2865,7 +2979,7 @@ export class Container implements Disposable, AsyncDisposable {
       root &&
       retireOwnBindings &&
       registration.token === token &&
-      mutationOwner.#mutationVisibleFrom(effectiveLookup, token)
+      registration.owner === mutationOwner
     ) {
       return true;
     }
@@ -2889,33 +3003,41 @@ export class Container implements Disposable, AsyncDisposable {
       const dependencyToken = isTokenDependencyDescriptor(dependency)
         ? dependency.token
         : dependency;
+      const chainedDependency =
+        isTokenDependencyDescriptor(dependency, "all") &&
+        dependency.chained;
       if (
         dependencyToken === token &&
-        mutationOwner.#mutationVisibleFrom(effectiveLookup, token)
+        (chainedDependency
+          ? mutationOwner.#isAncestorOf(effectiveLookup)
+          : mutationOwner.#mutationVisibleFrom(effectiveLookup, token))
       ) {
         return true;
       }
-      const bindings = effectiveLookup.#lookup(dependencyToken);
-      if (!bindings) continue;
-      for (const dependencyRegistration of bindings.bindings) {
-        if (
-          this.#registrationAffectedBy(
-            dependencyRegistration,
-            effectiveLookup,
-            token,
-            mutationOwner,
-            retireOwnBindings,
-            availabilityChanged,
-            ownAvailabilityChanged,
-            effectiveLookup.#cachedRuntimeDependencies(
+      for (const bindings of effectiveLookup.#lookupSets(
+        dependencyToken,
+        chainedDependency,
+      )) {
+        for (const dependencyRegistration of bindings.bindings) {
+          if (
+            this.#registrationAffectedBy(
               dependencyRegistration,
               effectiveLookup,
-            ),
-            visited,
-            false,
-          )
-        ) {
-          return true;
+              token,
+              mutationOwner,
+              retireOwnBindings,
+              availabilityChanged,
+              ownAvailabilityChanged,
+              effectiveLookup.#cachedRuntimeDependencies(
+                dependencyRegistration,
+                effectiveLookup,
+              ),
+              visited,
+              false,
+            )
+          ) {
+            return true;
+          }
         }
       }
     }
@@ -2925,10 +3047,14 @@ export class Container implements Disposable, AsyncDisposable {
           dynamicLookup,
           token,
         );
+        const chainedResolve =
+          (modes & RUNTIME_DEPENDENCY_RESOLVE_CHAINED) !== 0;
         if (dependencyToken === token) {
           if (
             (modes & RUNTIME_DEPENDENCY_RESOLVE) !== 0 &&
-            mutationVisible
+            (chainedResolve
+              ? mutationOwner.#isAncestorOf(dynamicLookup)
+              : mutationVisible)
           ) {
             return true;
           }
@@ -2948,27 +3074,30 @@ export class Container implements Disposable, AsyncDisposable {
           }
         }
         if ((modes & RUNTIME_DEPENDENCY_RESOLVE) === 0) continue;
-        const bindings = dynamicLookup.#lookup(dependencyToken);
-        if (!bindings) continue;
-        for (const dependencyRegistration of bindings.bindings) {
-          if (
-            this.#registrationAffectedBy(
-              dependencyRegistration,
-              dynamicLookup,
-              token,
-              mutationOwner,
-              retireOwnBindings,
-              availabilityChanged,
-              ownAvailabilityChanged,
-              dynamicLookup.#cachedRuntimeDependencies(
+        for (const bindings of dynamicLookup.#lookupSets(
+          dependencyToken,
+          chainedResolve,
+        )) {
+          for (const dependencyRegistration of bindings.bindings) {
+            if (
+              this.#registrationAffectedBy(
                 dependencyRegistration,
                 dynamicLookup,
-              ),
-              visited,
-              false,
-            )
-          ) {
-            return true;
+                token,
+                mutationOwner,
+                retireOwnBindings,
+                availabilityChanged,
+                ownAvailabilityChanged,
+                dynamicLookup.#cachedRuntimeDependencies(
+                  dependencyRegistration,
+                  dynamicLookup,
+                ),
+                visited,
+                false,
+              )
+            ) {
+              return true;
+            }
           }
         }
       }
@@ -3007,6 +3136,8 @@ export class Container implements Disposable, AsyncDisposable {
     this.#validatedAsync.clear();
     this.#validatedAllSync.clear();
     this.#validatedAllAsync.clear();
+    this.#validatedChainedAllSync.clear();
+    this.#validatedChainedAllAsync.clear();
   }
 
   #trackInFlight<T>(operation: Promise<T>): Promise<T> {
@@ -3252,10 +3383,7 @@ export class Container implements Disposable, AsyncDisposable {
     this.#registrations.clear();
     this.#singletonCache.clear();
     this.#scopedCache.clear();
-    this.#validatedSync.clear();
-    this.#validatedAsync.clear();
-    this.#validatedAllSync.clear();
-    this.#validatedAllAsync.clear();
+    this.#clearValidation();
     this.#owned.length = 0;
     this.#inFlight.clear();
     for (const child of this.#children) {
@@ -3362,6 +3490,14 @@ type TokenDependencyDescriptor =
   | AllDependency<any>
   | LazyDependency<any>;
 
+function isTokenDependencyDescriptor(
+  value: AnyDependency,
+  kind: "all",
+): value is AllDependency<any>;
+function isTokenDependencyDescriptor(
+  value: AnyDependency,
+  kind?: "optional" | "all" | "lazy",
+): value is TokenDependencyDescriptor;
 function isTokenDependencyDescriptor(
   value: AnyDependency,
   kind?: "optional" | "all" | "lazy",
@@ -3834,10 +3970,19 @@ function injectionDependencies(
       owner,
     );
   }
-  for (const dependency of inject) {
+  return inject.map((dependency) => {
     assertDependency(dependency, owner);
-  }
-  return [...inject];
+    if (typeof dependency !== "object" || dependency === null) return dependency;
+    if (isResolverDependency(dependency)) return resolver();
+    const descriptor = dependency as TokenDependencyDescriptor;
+    if (descriptor[dependencyDescriptorType] === "all") {
+      return all(descriptor.token, { chained: descriptor.chained });
+    }
+    if (descriptor[dependencyDescriptorType] === "optional") {
+      return optional(descriptor.token);
+    }
+    return lazy(descriptor.token);
+  });
 }
 
 function checkedScope(
@@ -3889,11 +4034,13 @@ function assertDependency(
     const descriptor = value as {
       readonly [dependencyDescriptorType]: unknown;
       readonly token?: unknown;
+      readonly chained?: unknown;
     };
     if (descriptor[dependencyDescriptorType] === "resolver") return;
     if (
       (descriptor[dependencyDescriptorType] === "optional" ||
-        descriptor[dependencyDescriptorType] === "all" ||
+        (descriptor[dependencyDescriptorType] === "all" &&
+          typeof descriptor.chained === "boolean") ||
         descriptor[dependencyDescriptorType] === "lazy") &&
       (typeof descriptor.token === "symbol" || isConstructible(descriptor.token))
     ) {

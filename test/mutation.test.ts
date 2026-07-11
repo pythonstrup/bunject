@@ -531,6 +531,85 @@ describe("container mutation", () => {
     expect(emptyAgain.values).toEqual([]);
   });
 
+  test("invalidates only static chained-all dependents for shadowed parent mutations", () => {
+    const ITEM = token<number>("ITEM");
+    const NEAREST = token<{ readonly values: readonly number[] }>("NEAREST");
+    const CHAINED = token<{ readonly values: readonly number[] }>("CHAINED");
+    const parent = new Container();
+    parent.registerMulti(ITEM, { useValue: 1 });
+    const child = parent.createScope();
+    child.registerMulti(ITEM, { useValue: 2 });
+    child.register(NEAREST, {
+      inject: [all(ITEM)],
+      scope: "singleton",
+      useFactory: (values) => ({ values }),
+    });
+    child.register(CHAINED, {
+      inject: [all(ITEM, { chained: true })],
+      scope: "singleton",
+      useFactory: (values) => ({ values }),
+    });
+
+    const nearest = child.resolve(NEAREST);
+    const chained = child.resolve(CHAINED);
+    expect(nearest.values).toEqual([2]);
+    expect(chained.values).toEqual([2, 1]);
+
+    parent.registerMulti(ITEM, { useValue: 3 });
+
+    expect(child.resolve(NEAREST)).toBe(nearest);
+    const updated = child.resolve(CHAINED);
+    expect(updated).not.toBe(chained);
+    expect(updated.values).toEqual([2, 1, 3]);
+  });
+
+  test("tracks dynamic chained-all lookups separately from nearest lookups", () => {
+    const ITEM = token<number>("ITEM");
+    const NEAREST = token<{ readonly values: readonly number[] }>("NEAREST");
+    const CHAINED = token<{ readonly values: readonly number[] }>("CHAINED");
+    const parent = new Container();
+    parent.registerMulti(ITEM, { useValue: 1 });
+    const child = parent.createScope();
+    child.registerMulti(ITEM, { useValue: 2 });
+    child.register(NEAREST, {
+      scope: "singleton",
+      useFactory: () => ({ values: child.resolveAll(ITEM) }),
+    });
+    child.register(CHAINED, {
+      scope: "singleton",
+      useFactory: () => ({
+        values: child.resolveAll(ITEM, { chained: true }),
+      }),
+    });
+
+    const nearest = child.resolve(NEAREST);
+    const chained = child.resolve(CHAINED);
+    parent.registerMulti(ITEM, { useValue: 3 });
+
+    expect(child.resolve(NEAREST)).toBe(nearest);
+    const updated = child.resolve(CHAINED);
+    expect(updated).not.toBe(chained);
+    expect(updated.values).toEqual([2, 1, 3]);
+  });
+
+  test("preserves unchanged ancestor scoped bindings after removing a local set", () => {
+    const ITEM = token<object>("ITEM");
+    let creations = 0;
+    const parent = new Container();
+    parent.registerMulti(ITEM, {
+      scope: "scoped",
+      useFactory: () => ({ generation: ++creations }),
+    });
+    const child = parent.createScope();
+    child.registerMulti(ITEM, { useValue: {} });
+
+    const ancestor = child.resolveAll(ITEM, { chained: true })[1];
+    child.unregister(ITEM);
+
+    expect(child.resolveAll(ITEM, { chained: true })[0]).toBe(ancestor);
+    expect(creations).toBe(1);
+  });
+
   test("retires old resource generations until final disposal", () => {
     const RESOURCE = token<Disposable & { readonly generation: number }>(
       "RESOURCE",

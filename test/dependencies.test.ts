@@ -233,6 +233,37 @@ describe("dependency descriptors", () => {
     expect(Object.isFrozen(lazy(VALUE))).toBeTrue();
   });
 
+  test("snapshots mutable descriptor copies during registration", () => {
+    const VALUE = token<number>("VALUE");
+    const ROOT = token<readonly number[]>("ROOT");
+    const INHERITED_ROOT = token<readonly number[]>("INHERITED_ROOT");
+    const parent = new Container();
+    parent.register(VALUE, { useValue: 1 });
+    const child = parent.createScope();
+    child.register(VALUE, { useValue: 2 });
+    const dependency = { ...all(VALUE) };
+    child.register(ROOT, {
+      inject: [dependency],
+      useFactory: (values) => values,
+    });
+    const inheritedDependency: typeof dependency = Object.create(
+      all(VALUE, { chained: true }),
+    );
+    child.register(INHERITED_ROOT, {
+      inject: [inheritedDependency],
+      useFactory: (values) => values,
+    });
+
+    dependency.chained = true;
+    expect(child.resolve(ROOT)).toEqual([2]);
+    expect(child.resolve(INHERITED_ROOT)).toEqual([2, 1]);
+    expect(child.inspect(ROOT).providers[0]?.dependencies[0]).toEqual({
+      token: VALUE,
+      kind: "all",
+      chained: false,
+    });
+  });
+
   test("descriptor failures remain ResolutionErrors", () => {
     const VALUE = token<number>("VALUE");
     const ROOT = token<number | undefined>("ROOT");

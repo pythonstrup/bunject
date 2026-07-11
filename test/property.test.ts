@@ -115,6 +115,12 @@ describe("container properties", () => {
           expected = layers[index] ?? expected;
           const scope = scopes[index]!;
           expect(scope.resolveAll(VALUE)).toEqual(expected);
+          expect(scope.resolveAll(VALUE, { chained: true })).toEqual(
+            layers
+              .slice(0, index + 1)
+              .reverse()
+              .flatMap((layer) => layer ?? []),
+          );
 
           if (expected.length === 0) {
             expect(() => scope.resolve(VALUE)).toThrow(

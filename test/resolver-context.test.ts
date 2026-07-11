@@ -53,6 +53,35 @@ describe("resolver dependency", () => {
     expect(child.resolve(SINGLETON_FACTORY)()).toBe("parent");
   });
 
+  test("chains all bindings from the resolver activation owner", () => {
+    const VALUE = token<string>("VALUE");
+    const SCOPED_RESOLVER = token<Resolver>("SCOPED_RESOLVER");
+    const SINGLETON_RESOLVER = token<Resolver>("SINGLETON_RESOLVER");
+    const parent = new Container();
+    parent.register(VALUE, { useValue: "parent" });
+    parent.register(SCOPED_RESOLVER, {
+      inject: [resolver()],
+      scope: "scoped",
+      useFactory: (activeResolver) => activeResolver,
+    });
+    parent.register(SINGLETON_RESOLVER, {
+      inject: [resolver()],
+      scope: "singleton",
+      useFactory: (activeResolver) => activeResolver,
+    });
+    const child = parent.createScope();
+    child.register(VALUE, { useValue: "child" });
+
+    const scoped = child.resolve(SCOPED_RESOLVER);
+    expect(scoped.resolveAll(VALUE, { chained: true })).toEqual([
+      "child",
+      "parent",
+    ]);
+    expect(
+      child.resolve(SINGLETON_RESOLVER).resolveAll(VALUE, { chained: true }),
+    ).toEqual(["parent"]);
+  });
+
   test("queries visible registrations and tracks immediate availability", () => {
     const INHERITED = token<number>("INHERITED");
     const OPTIONAL = token<number>("OPTIONAL");
