@@ -13,6 +13,8 @@ Ecosystem adoption and battle-testing remain external evidence.
 - Bun 1.3.14 and minimum Bun 1.3.10 are configured.
 - Runtime/type/property/stress/package/size/API gates pass on the current
   worktree: 159 tests, 97.62% overall lines, and 100% kernel lines.
+- Verified runtime, public API, packaging, and harness changes are committed in
+  `6db7b3e`.
 - The activation-scoped `resolver()` descriptor and provider-level cleanup
   adapters have focused, type, coverage, packed-consumer, and combined-gate
   evidence.
@@ -40,7 +42,8 @@ Ecosystem adoption and battle-testing remain external evidence.
 
 ## In progress
 
-- Complete the final adversarial audits and commit the verified Git baseline.
+- Await the final GitHub URL needed for package identity and remote release
+  evidence; keep the documented `Provider<T>` tuple-ergonomics item visible.
 
 ## Remaining work
 
@@ -74,4 +77,6 @@ Ecosystem adoption and battle-testing remain external evidence.
 - 2026-07-11: reviewed the new 13,588-byte gzip runtime baseline and raised the
   release ceiling from 13 KiB to 14 KiB for the Resolver and cleanup contracts.
 - 2026-07-11: passed the complete local merge gate, Deno 2.8.1 smoke, npm-packed
-  Bun/Node consumers, and peer benchmark; final audits and commit remain.
+  Bun/Node consumers, and peer benchmark before the final audits.
+- 2026-07-11: completed independent runtime, type, and release audits with no
+  remaining P0-P2 findings after fixes, then committed baseline `6db7b3e`.
