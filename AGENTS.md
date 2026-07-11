@@ -15,11 +15,17 @@ changing behavior.
 
 ## Repository map
 
-- `src/index.ts`: the complete public API and runtime kernel.
+- `src/index.ts`: the explicit public facade; it contains no runtime kernel.
+- `src/types.ts`, `src/dependencies.ts`, `src/providers.ts`, and `src/errors.ts`:
+  focused type, descriptor, provider, and error leaves around the kernel.
+- `src/container.ts`: the cohesive private-state resolution and lifecycle kernel.
 - `test/`: runtime, type, property, stress, lifecycle, and package regressions.
 - `scripts/`: package, API, size, release, compatibility, and harness checks.
 - `bench/`: Bunject and peer microbenchmarks; evidence, not a fastest claim.
 - `.github/workflows/`: configured CI and trusted-publishing release flow.
+
+Only the package root is public. Source and emitted internal module paths are
+implementation details and must not become package subpath exports.
 
 ## Working loop
 

@@ -25,7 +25,8 @@ signals are:
 - standard-decorator and type-checked self-package smoke on Deno 2.0.0 and the
   current Deno 2 line;
 - an executable, type-checked Bun HTTP request-scope example;
-- package-lint, public declaration hash, and compressed-size gates;
+- package-lint, aggregate emitted-declaration hash, and aggregate emitted
+  JavaScript/declaration compressed-size gates;
 - peer benchmarks for performance evidence;
 - `harness:check` for repository maps, links, and design invariants.
 
@@ -49,7 +50,15 @@ nested lists, and reference links follow the runtime's real syntax without a
 new package. The harness also verifies the full merge-gate composition; zero
 runtime dependencies; side-effect-free package metadata;
 standard-decorator compiler settings; and banned reflection imports across the
-source tree. It also requires the CI and release workflows, their
+source tree. The source checks require the six intentional module boundaries,
+explicit root exports, `.js` relative import specifiers, and no internal import
+through the public facade. They also require each emitted module's Deno
+`@ts-self-types` declaration link. Package metadata keeps internal modules out
+of the public export map, and Node consumer smoke rejects those subpaths.
+Declaration hashing includes
+every emitted `.d.ts` path and normalized content; size budgets aggregate every
+emitted `.js` and `.d.ts` file so splitting cannot evade either gate. The
+harness also requires the CI and release workflows, their
 supported-runtime jobs, and the compatibility-gated OIDC provenance contract
 that lints, consumes, and publishes the same tarball.
 

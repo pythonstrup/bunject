@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   assertStableRelease,
@@ -9,6 +9,7 @@ import {
 } from "./project-metadata";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const dist = join(root, "dist");
 const packageJson = JSON.parse(
   await readFile(join(root, "package.json"), "utf8"),
 ) as { version?: unknown };
@@ -49,19 +50,35 @@ if (release) {
   }
 }
 
-const [declaration, baseline] = await Promise.all([
-  readFile(join(root, "dist/index.d.ts")),
-  readFile(join(root, "api/index.d.ts.sha256"), "utf8"),
-]);
+const declarations = [
+  ...new Bun.Glob("**/*.d.ts").scanSync({
+    absolute: true,
+    cwd: dist,
+    dot: true,
+    onlyFiles: true,
+  }),
+].sort();
+if (declarations.length === 0) {
+  throw new Error("No emitted declarations were built.");
+}
+const actual = createHash("sha256");
+for (const file of declarations) {
+  actual
+    .update(relative(dist, file).split(sep).join("/"))
+    .update("\0")
+    .update((await readFile(file, "utf8")).replaceAll("\r\n", "\n"))
+    .update("\0");
+}
+const baseline = await readFile(join(root, "api/index.d.ts.sha256"), "utf8");
 const expectedHash = baseline.trim();
-const actualHash = createHash("sha256").update(declaration).digest("hex");
+const actualHash = actual.digest("hex");
 
 if (!/^[0-9a-f]{64}$/.test(expectedHash)) {
   throw new Error("api/index.d.ts.sha256 is not a SHA-256 hash.");
 }
 if (actualHash !== expectedHash) {
   throw new Error(
-    `Public declarations changed (${expectedHash} -> ${actualHash}). Review the SemVer impact, update CHANGELOG.md, and refresh api/index.d.ts.sha256.`,
+    `Emitted declarations changed (${expectedHash} -> ${actualHash}). Review the SemVer impact, update CHANGELOG.md, and refresh api/index.d.ts.sha256.`,
   );
 }
 

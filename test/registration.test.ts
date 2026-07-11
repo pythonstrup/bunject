@@ -126,6 +126,14 @@ describe("registration validation", () => {
         register: (container) =>
           (container as any).register(TOKEN, {
             useFactory: () => 1,
+            onActivation: 1,
+          }),
+      },
+      {
+        code: "INVALID_PROVIDER",
+        register: (container) =>
+          (container as any).register(TOKEN, {
+            useFactory: () => 1,
             onDisposal: 1,
           }),
       },
@@ -241,6 +249,29 @@ describe("registration validation", () => {
         useClass: Derived,
       }),
     ).not.toThrow();
+  });
+
+  test("attaches metadata to a class produced by a stacked decorator", () => {
+    const VALUE = token<number>("VALUE");
+    function replace<TClass extends new (...dependencies: any[]) => any>(
+      value: TClass,
+      _context: ClassDecoratorContext<TClass>,
+    ): TClass {
+      return class extends value {} as TClass;
+    }
+
+    @replace
+    @Injectable({ inject: [VALUE], scope: "singleton" })
+    class Service {
+      constructor(readonly value: number) {}
+    }
+
+    const container = new Container();
+    container.register(VALUE, { useValue: 42 });
+    container.register(Service);
+    const service = container.resolve(Service);
+    expect(service.value).toBe(42);
+    expect(container.resolve(Service)).toBe(service);
   });
 
   test("locks only containers visible to an active async graph", async () => {

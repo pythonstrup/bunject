@@ -11,10 +11,10 @@ Ecosystem adoption and battle-testing remain external evidence.
 ## Current evidence
 
 - Bun 1.3.14 and minimum Bun 1.3.10 are configured.
-- The complete local merge gate passes: 174 tests,
-  97.62% overall lines, and 100% kernel lines.
+- The complete local merge gate passes: 175 tests,
+  99.32% overall lines, and 100% lines in every source module.
 - The verified runtime, public API, packaging, compatibility, and harness
-  baseline is committed through `dcb872a`.
+  baseline is committed through `2addd82`.
 - The activation-scoped `resolver()` descriptor and provider-level cleanup
   adapters have focused, type, coverage, packed-consumer, and combined-gate
   evidence.
@@ -31,7 +31,7 @@ Ecosystem adoption and battle-testing remain external evidence.
 - Packed consumers now run the same concurrent async-context, error-path,
   singleton-coalescing, scope, and disposal scenario under Bun and Node. Deno
   2.0.0 and 2.8.1 pass type, standard-decorator, and runtime checks locally.
-- Bun 1.3.10 passes the source typecheck, all 174 tests, and the installed
+- Bun 1.3.10 passes the source typecheck, all 175 tests, and the installed
   packed-consumer smoke locally.
 - Container and Resolver optional sync/async resolution preserve every visible
   provider failure and track absent dynamic edges for cache invalidation.
@@ -78,14 +78,30 @@ Ecosystem adoption and battle-testing remain external evidence.
   deterministic creation-time initialization.
 - Pack a release once, lint and consume that exact archive, then pass the same
   file to `npm publish`; do not rebuild an unverified publication artifact.
+- Keep the source boundary to six files: an explicit `index.ts` public facade;
+  `types.ts`, `dependencies.ts`, `providers.ts`, and `errors.ts` leaves; and one
+  cohesive private-state `container.ts` kernel. Do not expose internal modules
+  as package subpaths or introduce runtime dependencies for this split.
+- Hash the path and normalized content of every emitted declaration, and apply
+  compressed-size budgets to the aggregate emitted JavaScript and declaration
+  sets so modularization cannot bypass the existing gates.
+- Use reviewed aggregate gzip ceilings of 16 KiB for runtime JavaScript and
+  6 KiB for declarations. They cover module framing and compressor variation
+  while remaining small enough to catch material growth.
+- Keep each source module's `@ts-self-types` link aligned with its emitted
+  sibling declaration because Deno does not infer adjacent `.d.ts` files.
 
 ## In progress
 
-- Profile the measured resolution hot path and pursue only repeatable,
-  correctness-preserving improvements justified by the benchmark harness.
+- Record the verified six-file source modularization as the new Git baseline,
+  then return to measured resolution hot-path profiling. Public API and runtime
+  behavior remain unchanged.
 
 ## Remaining work
 
+- After modularization is verified and committed, profile the measured
+  resolution hot path and pursue only repeatable, correctness-preserving
+  improvements justified by the benchmark harness.
 - Add token-level observers only after a concrete instrumentation consumer
   defines cache-hit, hierarchy, async, cardinality, and removal semantics.
 - Compare declarations against the previous published tarball after the first
@@ -200,3 +216,18 @@ Ecosystem adoption and battle-testing remain external evidence.
 - 2026-07-11: passed the complete merge gate, supported Deno smoke, peer
   benchmark, and two final independent reviews, then committed the chained
   multi-resolution baseline as `dcb872a`.
+- 2026-07-11: began the six-file source modularization after the single source
+  crossed the practical navigation and review threshold; verification and a
+  commit remain pending.
+- 2026-07-11: measured the modular output at 15,360 runtime and 5,484
+  declaration gzip bytes, then set reviewed aggregate ceilings of 16 KiB and
+  6 KiB rather than depending on a zero-headroom compressor result.
+- 2026-07-11: added per-module `@ts-self-types` links after Deno correctly
+  rejected TypeScript's adjacent-declaration assumption; Deno 2.0.0 and 2.8.1
+  then passed type and runtime smoke.
+- 2026-07-11: completed the six-file modularization gate with 175 passing tests,
+  99.32% overall line coverage, 100% lines in every source module, current and
+  minimum Bun, Node packed consumers, Deno 2.0.0 and 2.8.1, TypeScript current
+  and 5.4, aggregate API/size checks, and adversarial hidden-file and payload
+  mutations. Independent source and harness reviews found no remaining P0-P3
+  issue.

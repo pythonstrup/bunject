@@ -1,0 +1,515 @@
+// @ts-self-types="./types.d.ts"
+
+import type { Container } from "./container.js";
+
+declare const injectionTokenType: unique symbol;
+declare const definedProviderType: unique symbol;
+export const dependencyDescriptorType = Symbol("bunject.dependency");
+
+/** Activation lifetime for class and factory providers. */
+export type Scope = "singleton" | "scoped" | "resolution" | "transient";
+
+/** Concrete constructor that produces `T`. */
+export type Constructor<T = unknown> = new (...dependencies: any[]) => T;
+
+/** Abstract or concrete class usable as a token for `T`. */
+export type ClassToken<T = unknown> = abstract new (
+  ...dependencies: any[]
+) => T;
+
+/** Invariant symbol token carrying service type `T`. */
+export type InjectionToken<T> = symbol & {
+  readonly [injectionTokenType]: (value: T) => T;
+};
+
+/** Class or typed-symbol identity for a service. */
+export type Token<T> = ClassToken<T> | InjectionToken<T>;
+
+/** Excludes Promise-like service values from synchronous provider contracts. */
+export type NonPromise<T> = T extends PromiseLike<unknown> ? never : T;
+
+/** Extracts the service type carried by a token. */
+export type TokenValue<TToken extends Token<any>> =
+  TToken extends ClassToken<infer TValue>
+    ? TValue
+    : TToken extends InjectionToken<infer TValue>
+      ? TValue
+      : never;
+
+/** Frozen descriptor for an optional constructor/factory dependency. */
+export interface OptionalDependency<T> {
+  readonly [dependencyDescriptorType]: "optional";
+  readonly token: Token<T>;
+}
+
+/** Frozen descriptor for every binding selected by its multi-resolution mode. */
+export interface AllDependency<T> {
+  readonly [dependencyDescriptorType]: "all";
+  readonly token: Token<T>;
+  readonly chained: boolean;
+}
+
+/** Frozen descriptor for deferred resolution of one token. */
+export interface LazyDependency<T> {
+  readonly [dependencyDescriptorType]: "lazy";
+  readonly token: Token<T>;
+}
+
+/** Frozen descriptor that injects a Resolver bound to the activation container. */
+export interface ResolverDependency {
+  readonly [dependencyDescriptorType]: "resolver";
+}
+
+/** Deferred sync/async lookup for a single target token. */
+export interface Lazy<T> {
+  /** Resolves the deferred target synchronously. */
+  readonly resolve: () => T;
+  /** Resolves the deferred target through the async graph path. */
+  readonly resolveAsync: () => Promise<T>;
+}
+
+/** Registration-query and resolution access bound to the activation container. */
+export interface Resolver {
+  /** Tests registration availability without construction. */
+  readonly has: <T>(
+    token: Token<T>,
+    options?: RegistrationQueryOptions,
+  ) => boolean;
+  /** Resolves one required provider synchronously. */
+  readonly resolve: <T>(token: Token<T>) => T;
+  /** Returns `undefined` when absent; otherwise resolves synchronously. */
+  readonly resolveOptional: <T>(token: Token<T>) => T | undefined;
+  /** Resolves one required provider through the async graph path. */
+  readonly resolveAsync: <T>(token: Token<T>) => Promise<T>;
+  /** Returns `undefined` when absent; otherwise resolves asynchronously. */
+  readonly resolveOptionalAsync: <T>(
+    token: Token<T>,
+  ) => Promise<T | undefined>;
+  /** Resolves the selected complete binding sets synchronously. */
+  readonly resolveAll: <T>(
+    token: Token<T>,
+    options?: MultiResolutionOptions,
+  ) => readonly T[];
+  /** Resolves the selected complete binding sets asynchronously. */
+  readonly resolveAllAsync: <T>(
+    token: Token<T>,
+    options?: MultiResolutionOptions,
+  ) => Promise<readonly T[]>;
+}
+
+/** Token or descriptor accepted in an explicit injection tuple. */
+export type Dependency<T = any> =
+  | Token<T>
+  | OptionalDependency<T>
+  | AllDependency<T>
+  | LazyDependency<T>
+  | ResolverDependency;
+
+/** Maps one dependency declaration to its injected runtime value. */
+export type DependencyValue<TDependency extends Dependency<any>> =
+  TDependency extends ResolverDependency
+    ? Resolver
+    : TDependency extends OptionalDependency<infer TValue>
+      ? TValue | undefined
+      : TDependency extends AllDependency<infer TValue>
+        ? readonly TValue[]
+        : TDependency extends LazyDependency<infer TValue>
+          ? Lazy<TValue>
+          : TDependency extends Token<any>
+            ? TokenValue<TDependency>
+            : never;
+
+/** Maps an injection tuple to mutable constructor/factory parameters. */
+export type DependencyValues<TDependencies extends readonly Dependency<any>[]> = {
+  -readonly [TIndex in keyof TDependencies]: DependencyValue<
+    TDependencies[TIndex]
+  >;
+};
+
+/** Maps a tuple of direct tokens to their service values. */
+export type TokenValues<TTokens extends readonly Token<any>[]> =
+  DependencyValues<TTokens>;
+
+/** Concrete service class with an optional explicit static dependency tuple. */
+export type InjectableClass<T = unknown> = Constructor<T> & {
+  readonly inject?: readonly Dependency<any>[];
+};
+
+export type StaticInjectMatchesConstructor<TClass extends ClassToken<any>> =
+  TClass extends {
+    readonly inject: infer TDependencies extends readonly Dependency<any>[];
+  }
+    ? TClass extends abstract new (
+          ...dependencies: DependencyValues<TDependencies>
+        ) => any
+      ? unknown
+      : never
+    : unknown;
+
+export type InjectableDeclarationMatchesConstructor<
+  TClass extends ClassToken<any>,
+> = TClass extends { readonly inject: readonly Dependency<any>[] }
+  ? StaticInjectMatchesConstructor<TClass>
+  : ConstructorParameters<TClass> extends readonly []
+    ? unknown
+    : never;
+
+export type ProviderMatchesDeclaration<TProvider> =
+  TProvider extends {
+    readonly useClass: infer TClass extends InjectableClass<any>;
+    readonly inject: infer TDependencies extends readonly Dependency<any>[];
+  }
+    ? TClass extends new (
+          ...dependencies: DependencyValues<TDependencies>
+        ) => any
+      ? unknown
+      : never
+    : TProvider extends {
+          readonly useClass: infer TClass extends InjectableClass<any>;
+        }
+      ? StaticInjectMatchesConstructor<TClass>
+      : unknown;
+
+/** Scope-only `@Injectable()` options without a decorator dependency tuple. */
+export interface InjectableOptions {
+  readonly scope?: Scope;
+  readonly inject?: never;
+}
+
+/** Decorator options carrying an exact constructor dependency tuple. */
+export interface InjectableOptionsWithInject<
+  TDependencies extends readonly Dependency<any>[],
+> {
+  readonly scope?: Scope;
+  readonly inject: TDependencies;
+}
+
+/** Selects nearest-set or child-to-root multi-resolution. */
+export interface MultiResolutionOptions {
+  readonly chained?: boolean;
+}
+
+/** Selects sync/async and single/all graph preflight semantics. */
+export interface ValidationOptions {
+  readonly async?: boolean;
+  readonly all?: boolean;
+  readonly chained?: boolean;
+}
+
+/** Controls inherited versus local-only registration queries. */
+export interface RegistrationQueryOptions {
+  readonly own?: boolean;
+}
+
+/** Frozen context passed to a provider activation hook. */
+export interface ActivationContext<T> {
+  readonly container: Container;
+  readonly token: Token<T>;
+}
+
+/** Synchronous post-construction hook; returning a value is forbidden. */
+export type ActivationHook<T> = (
+  value: T,
+  context: ActivationContext<T>,
+) => undefined;
+
+/** Frozen ownership context passed to provider cleanup hooks. */
+export interface DisposalContext<T> {
+  readonly container: Container;
+  readonly token: Token<T>;
+}
+
+/** Synchronous provider cleanup adapter. */
+export type DisposalHook<T> = (
+  value: T,
+  context: DisposalContext<T>,
+) => undefined;
+
+/** Asynchronous provider cleanup adapter. */
+export type AsyncDisposalHook<T> = (
+  value: T,
+  context: DisposalContext<T>,
+) => PromiseLike<void>;
+
+/** Normalized provider kind reported by graph inspection. */
+export type ProviderKind =
+  | "class"
+  | "value"
+  | "factory"
+  | "asyncFactory"
+  | "existing";
+
+/** Dependency edge kind reported by graph inspection. */
+export type DependencyKind =
+  | "required"
+  | "optional"
+  | "all"
+  | "lazy"
+  | "resolver";
+
+/** Frozen dependency edge in an inspected graph. */
+export type InspectedDependency =
+  | {
+      readonly token: Token<any>;
+      readonly kind: Exclude<DependencyKind, "all" | "resolver">;
+    }
+  | {
+      readonly token: Token<any>;
+      readonly kind: "all";
+      readonly chained: boolean;
+    }
+  | {
+      readonly token?: never;
+      readonly kind: "resolver";
+    };
+
+/** Frozen provider node in an inspected graph. */
+export interface InspectedProvider {
+  readonly token: Token<any>;
+  readonly binding: number;
+  readonly mode: "single" | "multi";
+  readonly kind: ProviderKind;
+  readonly scope: Scope | undefined;
+  readonly owner: Container;
+  readonly dependencies: readonly InspectedDependency[];
+}
+
+/** Frozen, construction-free view of a token's declared dependency graph. */
+export interface DependencyGraph {
+  readonly root: Token<any>;
+  readonly providers: readonly InspectedProvider[];
+  readonly missing: readonly Token<any>[];
+}
+
+/** Restricted registration surface exposed inside an atomic module. */
+export interface RegistrationRegistry {
+  /** Adds one staged single binding and returns this registry. */
+  register<const TClass extends InjectableClass<any>>(
+    service: TClass & StaticInjectMatchesConstructor<NoInfer<TClass>>,
+  ): this;
+  register<T, const TClass extends InjectableClass<NonPromise<T>>>(
+    token: Token<T>,
+    provider: MetadataClassProvider<NoInfer<T>, TClass>,
+  ): this;
+  register<
+    T,
+    const TDependencies extends readonly Dependency<any>[],
+  >(
+    token: Token<T>,
+    provider: ClassProvider<NoInfer<T>, TDependencies>,
+  ): this;
+  register<T>(token: Token<T>, provider: ValueProvider<NoInfer<T>>): this;
+  register<T>(token: Token<T>, provider: ExistingProvider<NoInfer<T>>): this;
+  register<
+    T,
+    const TDependencies extends readonly Dependency<any>[],
+  >(
+    token: Token<T>,
+    provider: FactoryProvider<NoInfer<T>, TDependencies>,
+  ): this;
+  register<
+    T,
+    const TDependencies extends readonly Dependency<any>[],
+  >(
+    token: Token<T>,
+    provider: AsyncFactoryProvider<NoInfer<T>, TDependencies>,
+  ): this;
+  register<T>(token: Token<T>, provider: DefinedProvider<NoInfer<T>>): this;
+  register<T, const TProvider extends Provider<NoInfer<T>>>(
+    token: Token<T>,
+    provider: TProvider & ProviderMatchesDeclaration<NoInfer<TProvider>>,
+  ): this;
+
+  /** Appends one local multi-binding in registration order. */
+  registerMulti<T, const TClass extends InjectableClass<NonPromise<T>>>(
+    token: Token<T>,
+    provider: MetadataClassProvider<NoInfer<T>, TClass>,
+  ): this;
+  registerMulti<
+    T,
+    const TDependencies extends readonly Dependency<any>[],
+  >(
+    token: Token<T>,
+    provider: ClassProvider<NoInfer<T>, TDependencies>,
+  ): this;
+  registerMulti<T>(token: Token<T>, provider: ValueProvider<NoInfer<T>>): this;
+  registerMulti<T>(token: Token<T>, provider: ExistingProvider<NoInfer<T>>): this;
+  registerMulti<
+    T,
+    const TDependencies extends readonly Dependency<any>[],
+  >(
+    token: Token<T>,
+    provider: FactoryProvider<NoInfer<T>, TDependencies>,
+  ): this;
+  registerMulti<
+    T,
+    const TDependencies extends readonly Dependency<any>[],
+  >(
+    token: Token<T>,
+    provider: AsyncFactoryProvider<NoInfer<T>, TDependencies>,
+  ): this;
+  registerMulti<T>(
+    token: Token<T>,
+    provider: DefinedProvider<NoInfer<T>>,
+  ): this;
+  registerMulti<T, const TProvider extends Provider<NoInfer<T>>>(
+    token: Token<T>,
+    provider: TProvider & ProviderMatchesDeclaration<NoInfer<TProvider>>,
+  ): this;
+}
+
+/** A synchronous, atomically staged group of registrations. */
+export type RegistrationModule = (
+  registry: RegistrationRegistry,
+) => undefined;
+
+/** Constructs a service class with an explicit or class-owned dependency tuple. */
+export interface ClassProvider<
+  T,
+  TDependencies extends readonly Dependency<any>[] = readonly Dependency<any>[],
+> {
+  readonly useClass: (new (
+    ...dependencies: DependencyValues<NoInfer<TDependencies>>
+  ) => NonPromise<T>) & {
+    readonly inject?: readonly Dependency<any>[];
+  };
+  readonly scope?: Scope;
+  readonly inject?: TDependencies;
+  readonly onActivation?: ActivationHook<T>;
+  readonly onDisposal?: DisposalHook<T>;
+  readonly onDisposalAsync?: AsyncDisposalHook<T>;
+  readonly useValue?: never;
+  readonly useFactory?: never;
+  readonly useFactoryAsync?: never;
+  readonly useExisting?: never;
+}
+
+export type MetadataClassProvider<
+  T,
+  TClass extends InjectableClass<NonPromise<T>> = InjectableClass<
+    NonPromise<T>
+  >,
+> = Omit<ClassProvider<T, readonly []>, "useClass" | "inject"> & {
+  readonly useClass: TClass &
+    StaticInjectMatchesConstructor<NoInfer<TClass>>;
+  readonly inject?: never;
+};
+
+/** Registers a borrowed non-Promise value. */
+export interface ValueProvider<T> {
+  readonly useValue: NonPromise<T>;
+  readonly scope?: never;
+  readonly inject?: never;
+  readonly useClass?: never;
+  readonly useFactory?: never;
+  readonly useFactoryAsync?: never;
+  readonly useExisting?: never;
+  readonly onActivation?: never;
+  readonly onDisposal?: never;
+  readonly onDisposalAsync?: never;
+}
+
+/** Creates a service synchronously from an explicit dependency tuple. */
+export interface FactoryProvider<
+  T,
+  TDependencies extends readonly Dependency<any>[] = readonly Dependency<any>[],
+> {
+  readonly inject?: TDependencies;
+  readonly useFactory: (
+    ...dependencies: DependencyValues<NoInfer<TDependencies>>
+  ) => NonPromise<T>;
+  readonly scope?: Scope;
+  readonly onActivation?: ActivationHook<T>;
+  readonly onDisposal?: DisposalHook<T>;
+  readonly onDisposalAsync?: AsyncDisposalHook<T>;
+  readonly useClass?: never;
+  readonly useValue?: never;
+  readonly useFactoryAsync?: never;
+  readonly useExisting?: never;
+}
+
+/** Creates a service asynchronously from an explicit dependency tuple. */
+export interface AsyncFactoryProvider<
+  T,
+  TDependencies extends readonly Dependency<any>[] = readonly Dependency<any>[],
+> {
+  readonly inject?: TDependencies;
+  readonly useFactoryAsync: (
+    ...dependencies: DependencyValues<NoInfer<TDependencies>>
+  ) => PromiseLike<NonPromise<T>>;
+  readonly scope?: Scope;
+  readonly onActivation?: ActivationHook<T>;
+  readonly onDisposal?: DisposalHook<T>;
+  readonly onDisposalAsync?: AsyncDisposalHook<T>;
+  readonly useClass?: never;
+  readonly useValue?: never;
+  readonly useFactory?: never;
+  readonly useExisting?: never;
+}
+
+/** Aliases another token without taking separate ownership. */
+export interface ExistingProvider<T> {
+  readonly useExisting: Token<T>;
+  readonly scope?: never;
+  readonly inject?: never;
+  readonly useClass?: never;
+  readonly useValue?: never;
+  readonly useFactory?: never;
+  readonly useFactoryAsync?: never;
+  readonly onActivation?: never;
+  readonly onDisposal?: never;
+  readonly onDisposalAsync?: never;
+}
+
+/** Union of every provider registration form for service `T`. */
+export type Provider<T> =
+  | ClassProvider<T>
+  | MetadataClassProvider<T>
+  | ValueProvider<T>
+  | FactoryProvider<T>
+  | AsyncFactoryProvider<T>
+  | ExistingProvider<T>;
+
+/** An opaque, dependency-checked provider definition safe to store and reuse. */
+export interface DefinedProvider<T> {
+  readonly [definedProviderType]: (value: T) => T;
+}
+
+export type DependencyTuple =
+  | readonly []
+  | readonly [Dependency<any>, ...Dependency<any>[]];
+
+export type ProviderWithInject<
+  TProvider,
+  TDependencies extends DependencyTuple,
+> = TProvider & { readonly inject: TDependencies };
+
+export type Defined<TProvider, T> = TProvider & DefinedProvider<T>;
+
+export interface ProviderBuilder<T> {
+  <const TDependencies extends DependencyTuple>(
+    provider: ProviderWithInject<ClassProvider<T, TDependencies>, TDependencies>,
+  ): Defined<
+    ProviderWithInject<ClassProvider<T, TDependencies>, TDependencies>,
+    T
+  >;
+  <const TDependencies extends DependencyTuple>(
+    provider: ProviderWithInject<FactoryProvider<T, TDependencies>, TDependencies>,
+  ): Defined<
+    ProviderWithInject<FactoryProvider<T, TDependencies>, TDependencies>,
+    T
+  >;
+  <const TDependencies extends DependencyTuple>(
+    provider: ProviderWithInject<
+      AsyncFactoryProvider<T, TDependencies>,
+      TDependencies
+    >,
+  ): Defined<
+    ProviderWithInject<AsyncFactoryProvider<T, TDependencies>, TDependencies>,
+    T
+  >;
+}
+
+
+export type AnyToken = Token<any>;
+export type AnyDependency = Dependency<any>;

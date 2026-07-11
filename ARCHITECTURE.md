@@ -8,9 +8,20 @@ reflection, global registration, parameter decorators, or framework-specific
 discovery. Browser and non-Node-compatible edge runtimes are not targets because
 the kernel uses `node:async_hooks` for concurrent resolution context.
 
-The implementation intentionally lives in [one kernel](./src/index.ts). Split it
-only when navigation or independent ownership becomes measurably worse; file
-count is not an architecture goal.
+The original single source crossed the point where navigation, review, and
+independent ownership were measurably worse. The source therefore has six
+deliberate boundaries while preserving one cohesive stateful kernel:
+
+- [`src/index.ts`](./src/index.ts) explicitly exports the public root surface;
+- `src/types.ts`, `src/dependencies.ts`, `src/providers.ts`, and `src/errors.ts`
+  are focused leaves for their named concerns;
+- [`src/container.ts`](./src/container.ts) owns container state, resolution,
+  mutation, caching, ownership, and disposal.
+
+This is a maintainability boundary, not an API or behavior change. It adds no
+runtime dependency and does not split private container state across service
+objects. The package exports only `bunject`; emitted internal modules are not
+supported subpaths.
 
 ## Public model
 
@@ -90,10 +101,14 @@ inspection.
 - Type contracts: `test/types.ts` under current and minimum TypeScript.
 - Generated graphs and scheduling: property and stress suites.
 - Packed artifact: npm pack/install followed by Bun, emitted-decorator Node, and
-  direct Node consumers.
-- Public API: built declaration SHA-256 review gate.
+  direct Node consumers; Node also rejects internal package subpaths.
+- Declaration drift: deterministic SHA-256 over each emitted declaration path
+  and its normalized content.
+- Deno declarations: each emitted JavaScript module advertises its sibling
+  declaration with `@ts-self-types`; Node consumers use the package type entry.
 - Compatibility: Bun minimum/latest, Node matrix, and Deno smoke.
-- Performance: compressed size budgets and peer benchmarks.
+- Performance: aggregate compressed budgets over every emitted JavaScript and
+  declaration file, plus peer benchmarks.
 - Repository knowledge: `bun run harness:check`.
 
 See [the documentation index](./docs/index.md), [maturity criteria](./docs/maturity.md),

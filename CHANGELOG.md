@@ -29,3 +29,8 @@ This project follows [Semantic Versioning](https://semver.org/).
   harness based on repository-local, agent-readable feedback, plus a public API
   reference, knowledge reachability, reference/anchor and packed-document link
   validation, and compatibility-gated exact-tarball OIDC publication.
+- Explicit public facade plus focused type, dependency, provider, error, and
+  container source modules, without changing the root API, runtime behavior, or
+  runtime dependencies. Internal modules remain outside the package export map;
+  declaration hashing and JavaScript/declaration size budgets cover all emitted
+  files in aggregate, and Deno resolves each module's sibling declaration.

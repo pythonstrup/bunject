@@ -1,13 +1,34 @@
 const delay = (milliseconds) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-export async function runRuntimeSmoke({
-  Container,
-  all,
-  defineProvider,
-  resolver,
-  token,
-}) {
+export async function runRuntimeSmoke(bunject) {
+  const expectedExports = [
+    "Container",
+    "Injectable",
+    "RegistrationError",
+    "ResolutionError",
+    "all",
+    "defineProvider",
+    "lazy",
+    "optional",
+    "resolver",
+    "token",
+  ];
+  if (
+    JSON.stringify(Object.keys(bunject).sort()) !==
+    JSON.stringify(expectedExports.sort())
+  ) {
+    throw new Error("Runtime export surface smoke test failed");
+  }
+  const {
+    Container,
+    RegistrationError,
+    ResolutionError,
+    all,
+    defineProvider,
+    resolver,
+    token,
+  } = bunject;
   const VALUE = token("VALUE");
   const MISSING = token("MISSING");
   const RESOLUTION_VALUE = token("RESOLUTION_VALUE");
@@ -18,6 +39,16 @@ export async function runRuntimeSmoke({
   const RESOURCE = token("RESOURCE");
   let singletonCreations = 0;
   let disposals = 0;
+
+  const errorContainer = new Container();
+  errorContainer.register(VALUE, { useValue: 1 });
+  let registrationError = false;
+  try {
+    errorContainer.register(VALUE, { useValue: 2 });
+  } catch (error) {
+    registrationError = error instanceof RegistrationError;
+  }
+  if (!registrationError) throw new Error("Registration error identity failed");
 
   const container = new Container();
   container.register(VALUE, { useValue: 42 });
@@ -55,9 +86,11 @@ export async function runRuntimeSmoke({
           chained: true,
         });
         let path;
+        let resolutionError = false;
         try {
           activeResolver.resolve(MISSING);
         } catch (error) {
+          resolutionError = error instanceof ResolutionError;
           path = error?.path;
         }
         return {
@@ -67,6 +100,7 @@ export async function runRuntimeSmoke({
           chainedValuesAsync,
           after,
           path,
+          resolutionError,
           singleton,
           value: activeResolver.resolve(VALUE),
         };
@@ -95,6 +129,8 @@ export async function runRuntimeSmoke({
   if (
     !first.available ||
     !second.available ||
+    !first.resolutionError ||
+    !second.resolutionError ||
     first.value !== 21 ||
     second.value !== 21 ||
     first.chainedValues?.join(",") !== "21,42" ||

@@ -53,9 +53,16 @@ callers may still hold.
 - [x] Atomic module/bulk registration
 - [x] InversifyJS, TSyringe, and Awilix migration guides
 - [x] Executable and type-checked Bun HTTP request-scope example
-- [x] Checked declaration hash, package lint, and versioned changelog gate
+- [x] Aggregate emitted-declaration hash, package lint, and versioned changelog
+  gate
 - [x] Agent map, architecture record, execution plan, and knowledge-link harness
 - [x] Shipped public API reference and declaration-level documentation
+
+The original single source crossed the practical navigation and review
+threshold, so the maintainability target is now an explicit public facade,
+four focused leaves, and one cohesive private-state container kernel.
+This split must preserve the root API and runtime behavior, add no runtime
+dependency, and keep every internal module outside the supported package API.
 
 ## Engineering gates
 
@@ -74,8 +81,8 @@ callers may still hold.
 - [x] Windows packed-consumer job configured
 - [x] Package lint and exported-type resolution checks
 - [x] Scope/disposal ownership and scheduler stress coverage
-- [x] Peer benchmark policy, representative graph/scope cases, and compressed-size
-  release budgets
+- [x] Peer benchmark policy, representative graph/scope cases, and aggregate
+  emitted JavaScript/declaration compressed-size release budgets
 - [x] Clean cross-platform build output without stale or unshipped declaration maps
 - [x] Zero runtime dependencies and allowlisted package payload
 - [x] MIT license, changelog, security policy, and support policy
@@ -83,16 +90,18 @@ callers may still hold.
   and reference links/anchors, and execution-plan structure checked mechanically
 - [x] Deno 2.0.0 and latest-Deno-2 compatibility matrix configured
 - [x] Local Deno 2.0.0 and 2.8.1 type/decorator/runtime smoke
+- [x] Per-module Deno `@ts-self-types` links for modular declaration resolution
 - [x] OIDC provenance release workflow gated by the full compatibility matrix
 - [ ] Deno 2, Windows, and runtime-matrix jobs passed on the eventual remote
 - [ ] npm trusted publisher, repository metadata, and provenance release verified
 
-`api/index.d.ts.sha256` deliberately makes any exported declaration change a
-review event; it is a drift gate, not a substitute for comparing against a
-previous published release. The maintainer must assess SemVer impact, update
-the changelog, and then refresh the hash. A release additionally requires a
-`v<package version>` tag and a dated changelog heading. Prerelease versions are
-blocked until the project adopts an explicit non-`latest` npm dist-tag policy.
+`api/index.d.ts.sha256` deliberately hashes every emitted declaration path and
+normalized content, making any declaration-output change a review event. It is
+a drift gate, not a substitute for comparing against a previous published
+release. The maintainer must assess SemVer impact, update the changelog, and
+then refresh the hash. A release additionally requires a `v<package version>`
+tag and a dated changelog heading. Prerelease versions are blocked until the
+project adopts an explicit non-`latest` npm dist-tag policy.
 
 CI configuration is repository evidence only after it has run on the eventual
 remote. The provenance workflow also needs the final repository URL in package

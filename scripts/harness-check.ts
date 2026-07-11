@@ -1,10 +1,26 @@
 import { access, readdir, readFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import { fileURLToPath } from "node:url";
 import { isCalendarDate } from "./project-metadata";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const failures: string[] = [];
+const sourceModules = [
+  "src/index.ts",
+  "src/types.ts",
+  "src/dependencies.ts",
+  "src/providers.ts",
+  "src/errors.ts",
+  "src/container.ts",
+] as const;
 const requiredFiles = [
   "AGENTS.md",
   "ARCHITECTURE.md",
@@ -21,7 +37,7 @@ const requiredFiles = [
   "examples/tsconfig.json",
   "package.json",
   "tsconfig.json",
-  "src/index.ts",
+  ...sourceModules,
   "scripts/deno-smoke.ts",
   "scripts/runtime-smoke.mjs",
 ] as const;
@@ -55,6 +71,8 @@ const packageJson = JSON.parse(
   dependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
+  exports?: Record<string, unknown>;
+  files?: unknown;
   scripts?: Record<string, string>;
   sideEffects?: unknown;
 };
@@ -67,6 +85,32 @@ if (
 }
 if (packageJson.sideEffects !== false) {
   failures.push("package.json must declare `sideEffects: false`.");
+}
+if (JSON.stringify(Object.keys(packageJson.exports ?? {})) !== '["."]') {
+  failures.push("package.json must expose only the root package entrypoint.");
+}
+const expectedPackageFiles = [
+  "dist",
+  "examples/bun-http.ts",
+  "docs/api.md",
+  "docs/bun-http.md",
+  "docs/harness.md",
+  "docs/maturity.md",
+  "docs/migrations.md",
+  "docs/support.md",
+  "CHANGELOG.md",
+  "LICENSE",
+  "README.md",
+  "SECURITY.md",
+];
+const packageFiles = Array.isArray(packageJson.files)
+  ? [...packageJson.files].sort()
+  : [];
+if (
+  JSON.stringify(packageFiles) !==
+  JSON.stringify([...expectedPackageFiles].sort())
+) {
+  failures.push("package.json files must match the reviewed package allowlist.");
 }
 for (const script of [
   "check",
@@ -179,17 +223,51 @@ async function collectSource(directory: string): Promise<void> {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) await collectSource(path);
-    else if (entry.name.endsWith(".ts")) sourceFiles.push(path);
+    else sourceFiles.push(path);
   }
 }
 await collectSource(join(root, "src"));
+const actualSourceModules = sourceFiles
+  .map((file) => relative(root, file).split(sep).join("/"))
+  .sort();
+if (
+  JSON.stringify(actualSourceModules) !==
+  JSON.stringify([...sourceModules].sort())
+) {
+  failures.push(
+    `Source modules must be exactly: ${sourceModules.join(", ")}.`,
+  );
+}
 for (const file of sourceFiles) {
+  if (!file.endsWith(".ts")) continue;
   const source = await readFile(file, "utf8");
+  const sourcePath = relative(root, file);
+  const selfTypes =
+    `// @ts-self-types="./${basename(file, ".ts")}.d.ts"`;
+  if (!source.startsWith(`${selfTypes}\n`)) {
+    failures.push(`${sourcePath} must start with ${selfTypes}.`);
+  }
   for (const banned of ["reflect-metadata", "design:paramtypes"]) {
     if (source.includes(banned)) {
-      failures.push(`${relative(root, file)} must not contain ${banned}.`);
+      failures.push(`${sourcePath} must not contain ${banned}.`);
     }
   }
+  if (sourcePath !== "src/index.ts" && /["']\.\/index(?:\.js)?["']/.test(source)) {
+    failures.push(`${sourcePath} must not import the public index barrel.`);
+  }
+  for (const match of source.matchAll(
+    /(?:\bfrom\s+|\bimport\s*(?:\(\s*)?)["'](\.[^"']+)["']/g,
+  )) {
+    if (!match[1]!.endsWith(".js")) {
+      failures.push(
+        `${sourcePath} must use a .js extension for ${match[1]}.`,
+      );
+    }
+  }
+}
+const publicIndex = await readFile(join(root, "src/index.ts"), "utf8");
+if (/\bexport\s+(?:type\s+)?\*/.test(publicIndex)) {
+  failures.push("src/index.ts must explicitly export the public surface.");
 }
 
 const ignoredDirectories = new Set([

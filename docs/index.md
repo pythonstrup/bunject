@@ -24,7 +24,8 @@ Use this page as the stable map for repository knowledge.
 - [Active DI maturity plan](./exec-plans/active/di-maturity.md)
 
 Public usage starts in the repository [README quick start][quick-start]. API
-behavior is authoritative in `src/index.ts`; changes to emitted declarations
-are checked by `api/index.d.ts.sha256`.
+behavior is exposed only through the explicit `src/index.ts` facade; internal
+source and emitted module paths are not public subpaths. Changes to the complete
+set of emitted declarations are checked by `api/index.d.ts.sha256`.
 
 [quick-start]: ../README.md#quick-start

@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryDirectory = await mkdtemp(join(tmpdir(), "bunject-package-smoke-"));
 const consumerDirectory = join(temporaryDirectory, "consumer");
+const packageRoot = join(consumerDirectory, "node_modules", "bunject");
 const suppliedArchive = process.argv[2]
   ? resolve(root, process.argv[2])
   : undefined;
@@ -49,7 +50,6 @@ async function run(command: string[], cwd: string): Promise<void> {
 }
 
 async function assertPackedMarkdownLinks(): Promise<void> {
-  const packageRoot = join(consumerDirectory, "node_modules", "bunject");
   const markdownFiles: string[] = [];
   const collect = async (directory: string): Promise<void> => {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -112,6 +112,48 @@ async function assertPackedMarkdownLinks(): Promise<void> {
         );
       }
     }
+  }
+}
+
+async function assertPackedPayload(): Promise<void> {
+  const files = [
+    ...new Bun.Glob("**/*").scanSync({
+      cwd: packageRoot,
+      dot: true,
+      onlyFiles: true,
+    }),
+  ].map((file) => file.split(sep).join("/")).sort();
+  const expected = [
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md",
+    "SECURITY.md",
+    "docs/api.md",
+    "docs/bun-http.md",
+    "docs/harness.md",
+    "docs/maturity.md",
+    "docs/migrations.md",
+    "docs/support.md",
+    "examples/bun-http.ts",
+    "package.json",
+    ...[
+      "container",
+      "dependencies",
+      "errors",
+      "index",
+      "providers",
+      "types",
+    ].flatMap((module) => [
+      `dist/${module}.d.ts`,
+      `dist/${module}.js`,
+      `dist/${module}.js.map`,
+    ]),
+  ].sort();
+  if (JSON.stringify(files) !== JSON.stringify(expected)) {
+    throw new Error(
+      `Packed payload files differ. Expected ${expected.join(", ")}; ` +
+        `received ${files.join(", ")}.`,
+    );
   }
 }
 
@@ -183,6 +225,17 @@ await runRuntimeSmoke(bunject);
 `,
   );
   await writeFile(
+    join(consumerDirectory, "deep-import.mjs"),
+    `let blocked = false;
+try {
+  await import("bunject/dist/container.js");
+} catch (error) {
+  blocked = error?.code === "ERR_PACKAGE_PATH_NOT_EXPORTED";
+}
+if (!blocked) throw new Error("Package deep import was not blocked");
+`,
+  );
+  await writeFile(
     join(consumerDirectory, "tsconfig.json"),
     `${JSON.stringify(
       {
@@ -208,6 +261,7 @@ await runRuntimeSmoke(bunject);
     consumerDirectory,
   );
   await assertPackedMarkdownLinks();
+  await assertPackedPayload();
   await run(
     [
       "bun",
@@ -226,6 +280,7 @@ await runRuntimeSmoke(bunject);
   await run(["bun", "run", "node-consumer.mjs"], consumerDirectory);
   await run(["node", "out/bun-consumer.js"], consumerDirectory);
   await run(["node", "node-consumer.mjs"], consumerDirectory);
+  await run(["node", "deep-import.mjs"], consumerDirectory);
   console.log(
     "npm-packed sync/async consumer smoke passed in Bun and Node.",
   );
