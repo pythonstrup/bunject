@@ -14,7 +14,7 @@ Ecosystem adoption and battle-testing remain external evidence.
 - The complete local merge gate passes on the current worktree: 164 tests,
   97.62% overall lines, and 100% kernel lines.
 - The verified runtime, public API, packaging, compatibility, and harness
-  baseline is committed through `cf75ab1`.
+  baseline is committed through `62a3ffa`.
 - The activation-scoped `resolver()` descriptor and provider-level cleanup
   adapters have focused, type, coverage, packed-consumer, and combined-gate
   evidence.
@@ -176,3 +176,5 @@ Ecosystem adoption and battle-testing remain external evidence.
   over-engineering reviews, directly verified the native harness under Bun
   1.3.10, and passed the final 164-test complete gate with no remaining local
   P0, P1, or P2 finding in the changed surface.
+- 2026-07-11: committed the mutation-model and repository-harness baseline as
+  `62a3ffa`.
