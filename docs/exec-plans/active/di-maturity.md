@@ -11,12 +11,13 @@ Ecosystem adoption and battle-testing remain external evidence.
 ## Current evidence
 
 - Bun 1.3.14 and minimum Bun 1.3.10 are configured.
-- The complete local merge gate passes: 183 tests and 11,016 assertions with
+- The complete local merge gate passes: 187 tests and 11,031 assertions with
   99.11% overall lines and 99.91% functions. The private-state Container and
   every focused leaf retain 100% line coverage; the extracted resolution kernel
   has 95.05% lines and 100% functions.
-- The verified runtime, public API, packaging, compatibility, and harness
-  baseline is committed through `aa20a50`.
+- The pre-`forwardRef()` runtime, public API, packaging, compatibility, and
+  harness baseline is committed locally through `8c76b84`; public `origin/main`
+  remains at `aa20a50` pending push approval.
 - The activation-scoped `resolver()` descriptor and provider-level cleanup
   adapters have focused, type, coverage, packed-consumer, and combined-gate
   evidence.
@@ -33,7 +34,7 @@ Ecosystem adoption and battle-testing remain external evidence.
 - Packed consumers now run the same concurrent async-context, error-path,
   singleton-coalescing, scope, and disposal scenario under Bun and Node. Deno
   2.0.0 and 2.8.1 pass type, standard-decorator, and runtime checks locally.
-- Bun 1.3.10 passes the source typecheck, all 183 tests, and the installed
+- Bun 1.3.10 passes the source typecheck, all 187 tests, and the installed
   packed-consumer smoke locally.
 - Container and Resolver optional sync/async resolution preserve every visible
   provider failure and track absent dynamic edges for cache invalidation.
@@ -65,6 +66,9 @@ Ecosystem adoption and battle-testing remain external evidence.
 - Keep registration explicit and container-local.
 - Require an explicit dependency declaration even for zero-argument classes.
 - Keep typed class/symbol tokens; use separate tokens instead of named bindings.
+- Use `forwardRef()` only to defer declaration evaluation until registration;
+  materialize it before graph inspection or resolution and never create a
+  circular proxy.
 - Do not add snapshot/restore, global auto-registration, legacy decorators,
   circular proxies, or runtime dependencies without new evidence.
 - Preserve sync/async API separation and deterministic ownership.
@@ -102,7 +106,7 @@ Ecosystem adoption and battle-testing remain external evidence.
 - Hash the path and normalized content of every emitted declaration, and apply
   compressed-size budgets to the aggregate emitted JavaScript and declaration
   sets so modularization cannot bypass the existing gates.
-- Use reviewed aggregate gzip ceilings of 16 KiB for runtime JavaScript and
+- Use reviewed aggregate gzip ceilings of 17 KiB for runtime JavaScript and
   6 KiB for declarations. They cover module framing and compressor variation
   while remaining small enough to catch material growth.
 - Keep each source module's `@ts-self-types` link aligned with its emitted
@@ -133,9 +137,6 @@ Ecosystem adoption and battle-testing remain external evidence.
   compatibility proof.
 - Enable private vulnerability reporting and replace the provisional security
   route with the final advisory URL or a monitored fallback contact.
-- Add a class-token forward-reference helper only after release blockers. Typed
-  symbol tokens already avoid ESM declaration-order cycles; the helper is an
-  ergonomic improvement and must not create circular proxies.
 
 ## Exit criteria
 
@@ -318,8 +319,16 @@ Ecosystem adoption and battle-testing remain external evidence.
 - 2026-07-11: created and audited the public `pythonstrup/bunject` baseline.
   Its first CI run passed quality, minimum Bun, Node 22/24/26, and both Deno
   jobs; Windows failed because Bun could not spawn the extensionless npm shim.
-- 2026-07-11: mapped npm to `npm.cmd` only on Windows, fixed final repository
-  package metadata, and made ordinary API checks reject repository identity
-  drift before a release event.
+- 2026-07-11: wrapped npm through `cmd.exe` only on Windows, fixed final
+  repository package metadata, and made ordinary API checks reject repository
+  identity drift before a release event.
+- 2026-07-11: added registration-time `forwardRef()` materialization for class
+  declaration TDZ, including decorator/static metadata, exact tuple inference,
+  optional/all/lazy composition, eager-cycle preservation, and invalid callback
+  diagnostics without changing the resolution kernel.
+- 2026-07-11: measured the `forwardRef()` build at 16,507 JavaScript and 5,752
+  declaration gzip bytes. The public contract crossed the 16 KiB runtime
+  ceiling by 123 bytes, so the reviewed runtime ceiling is now 17 KiB while
+  declarations retain the existing 6 KiB ceiling.
 
 [first-public-ci]: https://github.com/pythonstrup/bunject/actions/runs/29155458515

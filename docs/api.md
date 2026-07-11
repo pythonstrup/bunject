@@ -10,6 +10,7 @@ import {
   Injectable,
   all,
   defineProvider,
+  forwardRef,
   lazy,
   optional,
   resolver,
@@ -45,6 +46,7 @@ An `inject` tuple accepts direct tokens and the following frozen descriptors:
 | `optional(TOKEN)` | `T \| undefined` | Absence yields `undefined`; an ambiguous or failing provider still fails. |
 | `all(TOKEN, options?)` | `readonly T[]` | Resolves the nearest complete binding set by default; `{ chained: true }` aggregates child-to-root sets. Absence yields `[]`. |
 | `lazy(TOKEN)` | `Lazy<T>` | Injects frozen `resolve()` and `resolveAsync()` functions and defers target construction and missing-token validation. |
+| `forwardRef(() => DEPENDENCY)` | The value of `DEPENDENCY` | Defers evaluation of one token or descriptor until provider registration. |
 | `resolver()` | `Resolver` | Injects a frozen token-agnostic resolver with single and multi, sync and async methods. |
 
 ```ts
@@ -81,10 +83,18 @@ join that resolution path; deferred calls read the current registry while
 preserving the holder's ownership limits.
 
 The exported descriptor types are `OptionalDependency<T>`, `AllDependency<T>`,
-`LazyDependency<T>`, and `ResolverDependency`. Their union with `Token<T>` is
-`Dependency<T>`. A frozen `AllDependency<T>` exposes a
+`LazyDependency<T>`, `ForwardRefDependency<D>`, and `ResolverDependency`.
+Their union with `Token<T>` is `Dependency<T>`. A frozen `AllDependency<T>` exposes a
 `readonly chained: boolean` field; it is `false` unless
 `all(token, { chained: true })` is used.
+
+`forwardRef()` is declaration-time indirection, not lazy instance resolution.
+Its callback runs once per provider registration and is replaced by the direct
+token, `optional()`, `all()`, `lazy()`, or `resolver()` declaration it returns.
+The callback is not run while decorator metadata is attached. A thrown callback,
+invalid result, or nested `forwardRef()` is an `INVALID_TOKEN` registration
+error with the provider token and original cause when available. Inspection and
+validation therefore expose only the resulting ordinary dependency edge.
 
 ### Type utilities
 

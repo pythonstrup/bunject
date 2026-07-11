@@ -24,6 +24,7 @@ Reference implementations:
 - [x] Standard decorators without reflect metadata or global registration
 - [x] Multi-binding and nearest or opt-in chained sync/async `resolveAll`
 - [x] Optional, all, and lifetime-safe lazy descriptors
+- [x] Registration-time class forward references without circular proxies
 - [x] First-class optional sync/async resolution on containers and resolvers
 - [x] Read-only activation-scoped resolver for availability and dynamic
   single/multi lookup

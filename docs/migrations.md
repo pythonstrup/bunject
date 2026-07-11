@@ -135,7 +135,7 @@ container.register(USER_SERVICE, {
 | Class/factory results | Owned through explicit callbacks or standard symbols |
 | Mutation | Local `rebind`/`unregister`; retired generations live to scope end |
 | Dynamic lookup | Same activation container or an ancestor only |
-| Cycles | Structured error; `lazy()` or an injected Resolver is the deferred edge |
+| Cycles | Structured error; `forwardRef()` avoids class TDZ, while `lazy()` or an injected Resolver defers resolution |
 
 Run `container.validate(ROOT)` for every migrated root before starting the
 application, then close integration tests with `await using` or an explicit

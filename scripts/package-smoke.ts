@@ -190,17 +190,25 @@ try {
   );
   await writeFile(
     join(consumerDirectory, "bun-consumer.ts"),
-    `import { Container, Injectable, defineProvider, token } from "bunject";
+    `import { Container, Injectable, defineProvider, forwardRef, token } from "bunject";
 
 const VALUE = token<number>("VALUE");
 const DOUBLE = token<number>("DOUBLE");
 const MISSING = token<number>("MISSING");
 
-@Injectable({ scope: "singleton" })
+@Injectable({
+  inject: [VALUE, forwardRef(() => ForwardDependency)],
+  scope: "singleton",
+})
 class Application {
-  static inject = [VALUE] as const;
-  constructor(readonly value: number) {}
+  constructor(
+    readonly value: number,
+    readonly dependency: ForwardDependency,
+  ) {}
 }
+
+@Injectable()
+class ForwardDependency {}
 
 const container = new Container();
 container.register(VALUE, { useValue: 42 });
@@ -208,10 +216,12 @@ container.register(DOUBLE, defineProvider<number>()({
   inject: [VALUE],
   useFactory: (value) => value * 2,
 }));
+container.register(ForwardDependency);
 container.register(Application);
 const first = container.resolve(Application);
 if (
   first.value !== 42 ||
+  !(first.dependency instanceof ForwardDependency) ||
   first !== container.resolve(Application) ||
   container.resolve(DOUBLE) !== 84 ||
   container.resolveOptional(MISSING) !== undefined ||

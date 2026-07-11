@@ -4,10 +4,13 @@ import {
   ResolutionError,
   Injectable,
   all,
+  forwardRef,
   lazy,
   optional,
+  resolver,
   token,
   type Lazy,
+  type Resolver,
 } from "../src/index";
 
 describe("dependency descriptors", () => {
@@ -212,6 +215,167 @@ describe("dependency descriptors", () => {
     await expect(target.resolveAsync()).resolves.toBeDefined();
   });
 
+  test("evaluates forward class references once during registration", () => {
+    let evaluations = 0;
+
+    @Injectable({
+      inject: [
+        forwardRef(() => {
+          evaluations += 1;
+          return Later;
+        }),
+      ],
+    })
+    class Earlier {
+      constructor(readonly later: Later) {}
+    }
+
+    @Injectable()
+    class Later {}
+
+    expect(evaluations).toBe(0);
+    const container = new Container();
+    container.register(Earlier);
+    expect(evaluations).toBe(1);
+    container.register(Later);
+
+    expect(container.resolve(Earlier).later).toBeInstanceOf(Later);
+    expect(container.inspect(Earlier).providers[0]?.dependencies).toEqual([
+      { token: Later, kind: "required" },
+    ]);
+  });
+
+  test("composes forward references with optional, all, lazy, and resolver", () => {
+    @Injectable()
+    class OptionalTarget {}
+
+    @Injectable()
+    class Hook {}
+
+    @Injectable({
+      inject: [
+        forwardRef(() => optional(OptionalTarget)),
+        forwardRef(() => all(Hook)),
+        forwardRef(() => resolver()),
+      ],
+    })
+    class Descriptors {
+      constructor(
+        readonly optionalTarget: OptionalTarget | undefined,
+        readonly hooks: readonly Hook[],
+        readonly activeResolver: Resolver,
+      ) {}
+    }
+
+    class A {
+      static readonly inject = [forwardRef(() => lazy(B))] as const;
+      constructor(readonly b: Lazy<B>) {}
+    }
+
+    class B {
+      static readonly inject = [A] as const;
+      constructor(readonly a: A) {}
+    }
+
+    const container = new Container();
+    container.registerMulti(Hook, { useValue: new Hook() });
+    container.registerMulti(Hook, { useValue: new Hook() });
+    container.register(Descriptors);
+    container.register(A, { scope: "singleton", useClass: A });
+    container.register(B);
+
+    const descriptors = container.resolve(Descriptors);
+    expect(descriptors.optionalTarget).toBeUndefined();
+    expect(descriptors.hooks).toHaveLength(2);
+    expect(descriptors.activeResolver.resolve(A)).toBeInstanceOf(A);
+    const a = container.resolve(A);
+    expect(a.b.resolve().a).toBe(a);
+  });
+
+  test("keeps forwarded eager cycles visible to automatic detection", () => {
+    class A {
+      static readonly inject = [forwardRef(() => B)] as const;
+      constructor(readonly b: B) {}
+    }
+
+    class B {
+      static readonly inject = [A] as const;
+      constructor(readonly a: A) {}
+    }
+
+    const container = new Container();
+    container.register(A);
+    container.register(B);
+
+    expect(() => container.resolve(A)).toThrow(
+      expect.objectContaining({
+        code: "CIRCULAR",
+        path: [A, B, A],
+        cycle: [A, B, A],
+      }),
+    );
+  });
+
+  test("reports invalid forward references at registration", () => {
+    const ROOT = token<object>("ROOT");
+    const cause = new Error("not initialized");
+    const container = new Container();
+
+    expect(() => (forwardRef as any)(undefined)).toThrow(
+      expect.objectContaining({ code: "INVALID_TOKEN" }),
+    );
+
+    try {
+      container.register(ROOT, {
+        inject: [
+          forwardRef(() => {
+            throw cause;
+          }),
+        ],
+        useFactory: () => ({}),
+      });
+      throw new Error("Expected registration to fail");
+    } catch (error) {
+      expect(error).toMatchObject({
+        code: "INVALID_TOKEN",
+        token: ROOT,
+        cause,
+      });
+    }
+
+    expect(() =>
+      container.register(ROOT, {
+        inject: [forwardRef(() => undefined as never)],
+        useFactory: () => ({}),
+      }),
+    ).toThrow(expect.objectContaining({ code: "INVALID_TOKEN", token: ROOT }));
+
+    expect(() =>
+      container.register(ROOT, {
+        inject: [forwardRef(() => forwardRef(() => ROOT) as any)],
+        useFactory: () => ({}),
+      }),
+    ).toThrow(expect.objectContaining({ code: "INVALID_TOKEN", token: ROOT }));
+
+    class BrokenClass {
+      static readonly inject = [
+        forwardRef((): ReturnType<typeof resolver> => {
+          throw cause;
+        }),
+      ] as const;
+
+      constructor(_activeResolver: Resolver) {}
+    }
+
+    expect(() => container.register(ROOT, { useClass: BrokenClass })).toThrow(
+      expect.objectContaining({
+        code: "INVALID_TOKEN",
+        token: ROOT,
+        cause,
+      }),
+    );
+  });
+
   test("supports typed decorator dependency metadata", () => {
     const VALUE = token<number>("VALUE");
 
@@ -231,6 +395,7 @@ describe("dependency descriptors", () => {
     expect(Object.isFrozen(optional(VALUE))).toBeTrue();
     expect(Object.isFrozen(all(VALUE))).toBeTrue();
     expect(Object.isFrozen(lazy(VALUE))).toBeTrue();
+    expect(Object.isFrozen(forwardRef(() => VALUE))).toBeTrue();
   });
 
   test("snapshots mutable descriptor copies during registration", () => {

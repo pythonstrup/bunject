@@ -60,6 +60,25 @@ export interface ResolverDependency {
   readonly [dependencyDescriptorType]: "resolver";
 }
 
+/** Dependency declaration that may be produced by a forward reference. */
+export type ForwardRefTarget<T = any> =
+  | Token<T>
+  | OptionalDependency<T>
+  | AllDependency<T>
+  | LazyDependency<T>
+  | ResolverDependency;
+
+/** Frozen declaration whose dependency is evaluated during registration. */
+export interface ForwardRefDependency<
+  TDependency extends ForwardRefTarget<any> = ForwardRefTarget<any>,
+> {
+  readonly [dependencyDescriptorType]: "forward";
+  readonly get: () => TDependency;
+}
+
+/** Dependency declaration after registration-time forward references are erased. */
+export type NormalizedDependency<T = any> = ForwardRefTarget<T>;
+
 /** Deferred sync/async lookup for a single target token. */
 export interface Lazy<T> {
   /** Resolves the deferred target synchronously. */
@@ -99,25 +118,24 @@ export interface Resolver {
 
 /** Token or descriptor accepted in an explicit injection tuple. */
 export type Dependency<T = any> =
-  | Token<T>
-  | OptionalDependency<T>
-  | AllDependency<T>
-  | LazyDependency<T>
-  | ResolverDependency;
+  | ForwardRefTarget<T>
+  | ForwardRefDependency<ForwardRefTarget<T>>;
 
 /** Maps one dependency declaration to its injected runtime value. */
 export type DependencyValue<TDependency extends Dependency<any>> =
-  TDependency extends ResolverDependency
-    ? Resolver
-    : TDependency extends OptionalDependency<infer TValue>
-      ? TValue | undefined
-      : TDependency extends AllDependency<infer TValue>
-        ? readonly TValue[]
-        : TDependency extends LazyDependency<infer TValue>
-          ? Lazy<TValue>
-          : TDependency extends Token<any>
-            ? TokenValue<TDependency>
-            : never;
+  TDependency extends ForwardRefDependency<infer TForwarded>
+    ? DependencyValue<TForwarded>
+    : TDependency extends ResolverDependency
+      ? Resolver
+      : TDependency extends OptionalDependency<infer TValue>
+        ? TValue | undefined
+        : TDependency extends AllDependency<infer TValue>
+          ? readonly TValue[]
+          : TDependency extends LazyDependency<infer TValue>
+            ? Lazy<TValue>
+            : TDependency extends Token<any>
+              ? TokenValue<TDependency>
+              : never;
 
 /** Maps an injection tuple to mutable constructor/factory parameters. */
 export type DependencyValues<TDependencies extends readonly Dependency<any>[]> = {

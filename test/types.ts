@@ -3,12 +3,14 @@ import {
   Injectable,
   all,
   defineProvider,
+  forwardRef,
   lazy,
   optional,
   resolver,
   token,
   type ClassProvider,
   type DefinedProvider,
+  type ForwardRefDependency,
   type InjectionToken,
   type Lazy,
   type MultiResolutionOptions,
@@ -272,6 +274,48 @@ container.register(DESCRIPTORS, {
     return [database, caches, deferredDatabase] as const;
   },
 });
+
+const forwardDatabase: ForwardRefDependency<typeof DATABASE> = forwardRef(
+  () => DATABASE,
+);
+void forwardDatabase;
+
+@Injectable({
+  inject: [
+    forwardRef(() => ForwardDatabase),
+    forwardRef(() => optional(ForwardDatabase)),
+    forwardRef(() => all(ForwardDatabase)),
+    forwardRef(() => lazy(ForwardDatabase)),
+    forwardRef(() => resolver()),
+  ],
+})
+class ForwardConsumer {
+  constructor(
+    readonly database: ForwardDatabase,
+    readonly optionalDatabase: ForwardDatabase | undefined,
+    readonly databases: readonly ForwardDatabase[],
+    readonly lazyDatabase: Lazy<ForwardDatabase>,
+    readonly activeResolver: Resolver,
+  ) {}
+}
+
+@Injectable()
+class ForwardDatabase extends Database {}
+
+container.register(ForwardDatabase);
+container.register(ForwardConsumer);
+
+// @ts-expect-error forward callbacks must return a dependency declaration
+forwardRef(() => 42);
+// @ts-expect-error nested forward references are not supported
+forwardRef(() => forwardRef(() => DATABASE));
+
+// @ts-expect-error forwarded dependencies must match the constructor
+@Injectable({ inject: [forwardRef(() => ForwardDatabase)] })
+class WrongForwardConsumer {
+  constructor(_cache: Cache) {}
+}
+void WrongForwardConsumer;
 
 const ACTIVE_RESOLVER = token<Resolver>("ACTIVE_RESOLVER");
 container.register(ACTIVE_RESOLVER, {

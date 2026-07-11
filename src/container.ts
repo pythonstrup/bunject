@@ -72,6 +72,7 @@ import type {
   Lazy,
   MetadataClassProvider,
   MultiResolutionOptions,
+  NormalizedDependency,
   NonPromise,
   Provider,
   ProviderMatchesDeclaration,
@@ -1354,7 +1355,7 @@ export class Container implements Disposable, AsyncDisposable {
   }
 
   #resolveDependencySync(
-    dependency: AnyDependency,
+    dependency: NormalizedDependency,
     path: readonly AnyToken[],
     session: ResolutionSession,
     captor?: LifetimeCaptor,
@@ -1391,7 +1392,7 @@ export class Container implements Disposable, AsyncDisposable {
   }
 
   async #resolveDependencyAsync(
-    dependency: AnyDependency,
+    dependency: NormalizedDependency,
     path: readonly AnyToken[],
     session: ResolutionSession,
     captor?: LifetimeCaptor,

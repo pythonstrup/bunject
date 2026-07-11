@@ -10,6 +10,9 @@ This project follows [Semantic Versioning](https://semver.org/).
 - Singleton, scoped, resolution, and transient lifetimes.
 - Child scopes, captive-dependency validation, optional/all/lazy descriptors,
   and an activation-scoped read-only Resolver with registration queries.
+- Registration-time `forwardRef()` declarations for later class tokens,
+  composable with optional, all, lazy, and resolver dependencies without
+  creating circular proxies.
 - Required and optional sync/async resolution for containers and injected
   resolvers, preserving graph failures when a provider is registered.
 - Opt-in child-to-root chained multi-resolution across containers, resolvers,

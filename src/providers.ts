@@ -25,6 +25,7 @@ import type {
   InjectableOptions,
   InjectableOptionsWithInject,
   MetadataClassProvider,
+  NormalizedDependency,
   Scope,
   ValueProvider,
 } from "./types.js";
@@ -42,7 +43,7 @@ export type NormalizedProvider =
   | {
       readonly kind: "class";
       readonly useClass: InjectableClass<any>;
-      readonly inject: readonly AnyDependency[];
+      readonly inject: readonly NormalizedDependency[];
       readonly scope: Scope;
       readonly onActivation: ActivationHook<any> | undefined;
       readonly onDisposal: DisposalHook<any> | undefined;
@@ -55,7 +56,7 @@ export type NormalizedProvider =
   | {
       readonly kind: "factory";
       readonly useFactory: (...dependencies: any[]) => unknown;
-      readonly inject: readonly AnyDependency[];
+      readonly inject: readonly NormalizedDependency[];
       readonly scope: Scope;
       readonly onActivation: ActivationHook<any> | undefined;
       readonly onDisposal: DisposalHook<any> | undefined;
@@ -66,7 +67,7 @@ export type NormalizedProvider =
       readonly useFactoryAsync: (
         ...dependencies: any[]
       ) => PromiseLike<unknown>;
-      readonly inject: readonly AnyDependency[];
+      readonly inject: readonly NormalizedDependency[];
       readonly scope: Scope;
       readonly onActivation: ActivationHook<any> | undefined;
       readonly onDisposal: DisposalHook<any> | undefined;
@@ -118,7 +119,7 @@ export function Injectable(
     const inject =
       options.inject === undefined
         ? undefined
-        : injectionDependencies(options.inject, value);
+        : injectionDependencies(options.inject, value, true);
     context.addInitializer(function () {
       injectableOptions.set(this, { scope, inject });
     });
@@ -239,10 +240,7 @@ export function normalizeProvider(
     return {
       kind: "class",
       useClass: provider.useClass,
-      inject: injectionDependencies(
-        declaredDependencies,
-        provider.useClass,
-      ),
+      inject: injectionDependencies(declaredDependencies, registeredToken),
       scope: checkedScope(
         provider.scope,
         inheritedInjectableScope(provider.useClass) ?? "transient",

@@ -4,6 +4,7 @@ export { Container } from "./container.js";
 export {
   all,
   defineProvider,
+  forwardRef,
   lazy,
   optional,
   resolver,
@@ -30,6 +31,7 @@ export type {
   DisposalHook,
   ExistingProvider,
   FactoryProvider,
+  ForwardRefDependency,
   InjectableClass,
   InjectableOptions,
   InjectableOptionsWithInject,

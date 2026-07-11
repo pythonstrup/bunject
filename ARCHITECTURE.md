@@ -37,8 +37,10 @@ Applications register a typed token against one provider:
 
 Constructor and factory dependencies are explicit tuples. `optional`, `all`,
 `lazy`, and `resolver` descriptors change resolution behavior without relying on
-runtime TypeScript metadata. `@Injectable` stores class-local scope and tuple
-metadata but never registers globally.
+runtime TypeScript metadata. `forwardRef` delays declaration evaluation only
+until registration, where it is erased before graph inspection or resolution.
+`@Injectable` stores class-local scope and tuple metadata but never registers
+globally.
 
 ## Resolution flow
 

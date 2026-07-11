@@ -148,7 +148,7 @@ providers use the active child and its overrides. Disposing a parent disposes
 descendants first.
 See the complete [Bun HTTP request-scope example](./docs/bun-http.md).
 
-## Multi, optional, all, lazy, and resolver dependencies
+## Multi, optional, all, lazy, forward, and resolver dependencies
 
 ```ts
 container.registerMulti(HOOK, { inject: [], useClass: AuditHook });
@@ -172,6 +172,27 @@ child through the root, preserving registration order within every set.
 `lazy(T)` returns a frozen
 `{ resolve, resolveAsync }` handle, defers construction and missing-token
 validation, and retains the lifetime constraints of its owner.
+
+`forwardRef(() => DEPENDENCY)` prevents a later class token from being read
+while its module binding is still uninitialized. The callback is evaluated once
+when the provider is registered and may return a direct token or an
+`optional()`, `all()`, `lazy()`, or `resolver()` declaration:
+
+```ts
+class A {
+  static inject = [forwardRef(() => lazy(B))] as const;
+  constructor(readonly b: Lazy<B>) {}
+}
+
+class B {
+  static inject = [A] as const;
+  constructor(readonly a: A) {}
+}
+```
+
+`forwardRef(() => B)` delays only token evaluation, so an eager `A -> B -> A`
+graph is still detected automatically as `CIRCULAR`. Combining it with
+`lazy(B)` intentionally defers that one resolution edge; no proxy is created.
 
 Use `resolver()` when a provider must choose tokens dynamically or resolve a
 complete multi-binding set:
@@ -325,7 +346,8 @@ Resolution path: UserController -> UserService -> UserRepository -> DATABASE
   leaks.
 - Circular proxies are not created; eager and immediate dynamic cycles fail
   with a structured error. Use `lazy()` or an injected `Resolver` for an
-  intentional deferred edge.
+  intentional deferred edge, and `forwardRef()` only when a later class token
+  cannot yet be evaluated.
 
 ## Project status
 

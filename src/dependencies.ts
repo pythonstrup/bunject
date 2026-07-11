@@ -11,10 +11,13 @@ import type {
   Defined,
   DependencyTuple,
   FactoryProvider,
+  ForwardRefDependency,
+  ForwardRefTarget,
   InjectableClass,
   InjectionToken,
   LazyDependency,
   MultiResolutionOptions,
+  NormalizedDependency,
   OptionalDependency,
   ProviderBuilder,
   ProviderWithInject,
@@ -25,6 +28,22 @@ import type {
 /** Creates a unique symbol token carrying service type `T`. */
 export function token<T>(description: string): InjectionToken<T> {
   return Symbol(description) as InjectionToken<T>;
+}
+
+/** Defers evaluation of one dependency declaration until registration. */
+export function forwardRef<
+  const TDependency extends ForwardRefTarget<any>,
+>(get: () => TDependency): ForwardRefDependency<TDependency> {
+  if (typeof get !== "function") {
+    throw registrationError(
+      "INVALID_TOKEN",
+      "forwardRef() requires a dependency callback.",
+    );
+  }
+  return Object.freeze({
+    [dependencyDescriptorType]: "forward" as const,
+    get,
+  });
 }
 
 /** Declares a dependency whose absence is represented by `undefined`. */
@@ -124,12 +143,31 @@ export function isTokenDependencyDescriptor(
   value: AnyDependency,
   kind?: "optional" | "all" | "lazy",
 ): value is TokenDependencyDescriptor {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !(dependencyDescriptorType in value)
+  ) {
+    return false;
+  }
+  const descriptorKind = value[dependencyDescriptorType];
+  return (
+    (descriptorKind === "optional" ||
+      descriptorKind === "all" ||
+      descriptorKind === "lazy") &&
+    (kind === undefined || descriptorKind === kind)
+  );
+}
+
+export function isForwardRefDependency(
+  value: unknown,
+): value is ForwardRefDependency {
   return (
     typeof value === "object" &&
     value !== null &&
     dependencyDescriptorType in value &&
-    value[dependencyDescriptorType] !== "resolver" &&
-    (kind === undefined || value[dependencyDescriptorType] === kind)
+    value[dependencyDescriptorType] === "forward" &&
+    typeof (value as { readonly get?: unknown }).get === "function"
   );
 }
 
@@ -159,6 +197,17 @@ const constructibleTokens = new WeakSet<Function>();
 export function injectionDependencies(
   inject: readonly AnyDependency[] | undefined,
   owner: AnyToken,
+  deferForwardRefs: true,
+): readonly AnyDependency[];
+export function injectionDependencies(
+  inject: readonly AnyDependency[] | undefined,
+  owner: AnyToken,
+  deferForwardRefs?: false,
+): readonly NormalizedDependency[];
+export function injectionDependencies(
+  inject: readonly AnyDependency[] | undefined,
+  owner: AnyToken,
+  deferForwardRefs = false,
 ): readonly AnyDependency[] {
   if (inject === undefined) {
     return [];
@@ -170,19 +219,51 @@ export function injectionDependencies(
       owner,
     );
   }
-  return inject.map((dependency) => {
-    assertDependency(dependency, owner);
-    if (typeof dependency !== "object" || dependency === null) return dependency;
-    if (isResolverDependency(dependency)) return resolver();
-    const descriptor = dependency as TokenDependencyDescriptor;
-    if (descriptor[dependencyDescriptorType] === "all") {
-      return all(descriptor.token, { chained: descriptor.chained });
+  return inject.map((dependency) =>
+    normalizeDependency(dependency, owner, deferForwardRefs),
+  );
+}
+
+function normalizeDependency(
+  dependency: unknown,
+  owner: AnyToken,
+  deferForwardRefs: boolean,
+): AnyDependency {
+  assertDependency(dependency, owner);
+  let normalized: AnyDependency = dependency;
+  if (isForwardRefDependency(normalized)) {
+    if (deferForwardRefs) return forwardRef(normalized.get);
+    let forwarded: unknown;
+    try {
+      forwarded = normalized.get();
+    } catch (cause) {
+      throw registrationError(
+        "INVALID_TOKEN",
+        `forwardRef for ${tokenName(owner)} could not be evaluated.`,
+        owner,
+        cause,
+      );
     }
-    if (descriptor[dependencyDescriptorType] === "optional") {
-      return optional(descriptor.token);
+    assertDependency(forwarded, owner);
+    if (isForwardRefDependency(forwarded)) {
+      throw registrationError(
+        "INVALID_TOKEN",
+        `forwardRef for ${tokenName(owner)} must return a direct dependency.`,
+        owner,
+      );
     }
-    return lazy(descriptor.token);
-  });
+    normalized = forwarded;
+  }
+  if (typeof normalized !== "object" || normalized === null) return normalized;
+  if (isResolverDependency(normalized)) return resolver();
+  const descriptor = normalized as TokenDependencyDescriptor;
+  if (descriptor[dependencyDescriptorType] === "all") {
+    return all(descriptor.token, { chained: descriptor.chained });
+  }
+  if (descriptor[dependencyDescriptorType] === "optional") {
+    return optional(descriptor.token);
+  }
+  return lazy(descriptor.token);
 }
 
 export function assertToken(value: unknown, owner?: AnyToken): asserts value is AnyToken {
@@ -217,8 +298,15 @@ function assertDependency(
       readonly [dependencyDescriptorType]: unknown;
       readonly token?: unknown;
       readonly chained?: unknown;
+      readonly get?: unknown;
     };
     if (descriptor[dependencyDescriptorType] === "resolver") return;
+    if (
+      descriptor[dependencyDescriptorType] === "forward" &&
+      typeof descriptor.get === "function"
+    ) {
+      return;
+    }
     if (
       (descriptor[dependencyDescriptorType] === "optional" ||
         (descriptor[dependencyDescriptorType] === "all" &&

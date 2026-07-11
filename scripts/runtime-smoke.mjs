@@ -9,6 +9,7 @@ export async function runRuntimeSmoke(bunject) {
     "ResolutionError",
     "all",
     "defineProvider",
+    "forwardRef",
     "lazy",
     "optional",
     "resolver",
