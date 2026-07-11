@@ -11,10 +11,10 @@ Ecosystem adoption and battle-testing remain external evidence.
 ## Current evidence
 
 - Bun 1.3.14 and minimum Bun 1.3.10 are configured.
-- The complete local runtime and coverage suite passes: 174 tests,
+- The complete local merge gate passes: 174 tests,
   97.62% overall lines, and 100% kernel lines.
-- The latest committed runtime, packaging, compatibility, and harness baseline
-  is `36de642`; chained multi-resolution is the current reviewed worktree.
+- The verified runtime, public API, packaging, compatibility, and harness
+  baseline is committed through `dcb872a`.
 - The activation-scoped `resolver()` descriptor and provider-level cleanup
   adapters have focused, type, coverage, packed-consumer, and combined-gate
   evidence.
@@ -81,8 +81,8 @@ Ecosystem adoption and battle-testing remain external evidence.
 
 ## In progress
 
-- Verify and audit the chained multi-resolution surface across supported
-  runtimes, package consumers, declarations, and repository gates.
+- Profile the measured resolution hot path and pursue only repeatable,
+  correctness-preserving improvements justified by the benchmark harness.
 
 ## Remaining work
 
@@ -197,3 +197,6 @@ Ecosystem adoption and battle-testing remain external evidence.
   failures, and scoped cache retirement from four independent adversarial
   findings; all 174 tests pass on Bun 1.3.10 and 1.3.14, both supported Deno
   versions pass, and packed Bun/Node consumers pass.
+- 2026-07-11: passed the complete merge gate, supported Deno smoke, peer
+  benchmark, and two final independent reviews, then committed the chained
+  multi-resolution baseline as `dcb872a`.
