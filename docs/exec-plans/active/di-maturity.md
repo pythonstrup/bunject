@@ -79,4 +79,5 @@ Ecosystem adoption and battle-testing remain external evidence.
 - 2026-07-11: passed the complete local merge gate, Deno 2.8.1 smoke, npm-packed
   Bun/Node consumers, and peer benchmark before the final audits.
 - 2026-07-11: completed independent runtime, type, and release audits with no
-  remaining P0-P2 findings after fixes, then committed baseline `6db7b3e`.
+  remaining P0/P1 findings and no new P2 beyond the documented stored-provider
+  tuple ergonomics, then committed baseline `6db7b3e`.
