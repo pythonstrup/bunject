@@ -15,6 +15,9 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryDirectory = await mkdtemp(join(tmpdir(), "bunject-package-smoke-"));
 const consumerDirectory = join(temporaryDirectory, "consumer");
+const suppliedArchive = process.argv[2]
+  ? resolve(root, process.argv[2])
+  : undefined;
 const { version } = JSON.parse(
   await readFile(join(root, "package.json"), "utf8"),
 ) as { version: string };
@@ -57,13 +60,40 @@ async function assertPackedMarkdownLinks(): Promise<void> {
   };
   await collect(packageRoot);
 
-  const markdownLink = /\[[^\]]*\]\(([^)]+)\)/g;
   for (const file of markdownFiles) {
     const markdown = await readFile(file, "utf8");
-    for (const match of markdown.matchAll(markdownLink)) {
-      const target = match[1]!.trim().split("#", 1)[0]!;
-      if (!target || /^[A-Za-z][A-Za-z+.-]*:/.test(target)) continue;
-      const destination = resolve(dirname(file), decodeURIComponent(target));
+    const targets: string[] = [];
+    Bun.markdown.render(markdown, {
+      link: (children, { href }) => {
+        targets.push(href);
+        return children;
+      },
+      image: (children, { src }) => {
+        targets.push(src);
+        return children;
+      },
+    });
+    for (const target of targets) {
+      if (
+        target.startsWith("//") ||
+        /^[A-Za-z][A-Za-z+.-]*:/.test(target)
+      ) {
+        continue;
+      }
+      const hash = target.indexOf("#");
+      const beforeHash = hash === -1 ? target : target.slice(0, hash);
+      const query = beforeHash.indexOf("?");
+      const rawPath = query === -1 ? beforeHash : beforeHash.slice(0, query);
+      if (!rawPath) continue;
+      let decodedPath: string;
+      try {
+        decodedPath = decodeURIComponent(rawPath);
+      } catch {
+        throw new Error(
+          `${relative(packageRoot, file)} has an invalid local link: ${target}`,
+        );
+      }
+      const destination = resolve(dirname(file), decodedPath);
       const packagePath = relative(packageRoot, destination);
       if (
         packagePath === ".." ||
@@ -86,10 +116,14 @@ async function assertPackedMarkdownLinks(): Promise<void> {
 }
 
 try {
-  await run(
-    ["npm", "pack", "--pack-destination", temporaryDirectory, "--silent"],
-    root,
-  );
+  if (suppliedArchive) {
+    await copyFile(suppliedArchive, join(temporaryDirectory, archiveName));
+  } else {
+    await run(
+      ["npm", "pack", "--pack-destination", temporaryDirectory, "--silent"],
+      root,
+    );
+  }
   await mkdir(consumerDirectory);
   await copyFile(
     join(root, "scripts/runtime-smoke.mjs"),

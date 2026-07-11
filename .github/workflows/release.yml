@@ -113,4 +113,10 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: bun run release:check
-      - run: npm publish --provenance --access public
+      - name: Pack release artifact
+        run: bun pm pack --filename bunject.tgz --quiet
+      - name: Verify exact release artifact
+        run: |
+          bun run scripts/package-lint.ts bunject.tgz
+          bun run scripts/package-smoke.ts bunject.tgz
+      - run: npm publish ./bunject.tgz --provenance --access public

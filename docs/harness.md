@@ -20,7 +20,8 @@ signals are:
 - property and randomized stress tests for graph/scheduler behavior;
 - current and pinned minimum TypeScript negative fixtures;
 - npm-packed TypeScript 5.4/current consumers plus a shared Bun/Node async
-  context, scope, and disposal smoke;
+  context, scope, and disposal smoke, with native Markdown validation of the
+  installed documentation;
 - standard-decorator and type-checked self-package smoke on Deno 2.0.0 and the
   current Deno 2 line;
 - an executable, type-checked Bun HTTP request-scope example;
@@ -49,8 +50,8 @@ new package. The harness also verifies the full merge-gate composition; zero
 runtime dependencies; side-effect-free package metadata;
 standard-decorator compiler settings; and banned reflection imports across the
 source tree. It also requires the CI and release workflows, their
-supported-runtime jobs, and the compatibility-gated OIDC provenance publish
-contract.
+supported-runtime jobs, and the compatibility-gated OIDC provenance contract
+that lints, consumes, and publishes the same tarball.
 
 ## Change loop
 

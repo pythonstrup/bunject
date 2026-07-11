@@ -1,10 +1,13 @@
 import { mkdtemp, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryDirectory = await mkdtemp(join(root, ".package-lint-"));
-const tarball = join(temporaryDirectory, "bunject.tgz");
+const suppliedTarball = process.argv[2]
+  ? resolve(root, process.argv[2])
+  : undefined;
+const tarball = suppliedTarball ?? join(temporaryDirectory, "bunject.tgz");
 
 async function run(command: string[]): Promise<void> {
   const child = Bun.spawn(command, {
@@ -20,14 +23,16 @@ async function run(command: string[]): Promise<void> {
 }
 
 try {
-  await run([
-    "bun",
-    "pm",
-    "pack",
-    "--filename",
-    tarball,
-    "--quiet",
-  ]);
+  if (!suppliedTarball) {
+    await run([
+      "bun",
+      "pm",
+      "pack",
+      "--filename",
+      tarball,
+      "--quiet",
+    ]);
+  }
   await run([join(root, "node_modules/.bin/publint"), tarball, "--strict"]);
   await run([
     join(root, "node_modules/.bin/attw"),

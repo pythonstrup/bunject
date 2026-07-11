@@ -154,7 +154,10 @@ for (const job of compatibilityJobs) {
 for (const marker of [
   "id-token: write",
   "bun run release:check",
-  "npm publish --provenance --access public",
+  "bun pm pack --filename bunject.tgz --quiet",
+  "bun run scripts/package-lint.ts bunject.tgz",
+  "bun run scripts/package-smoke.ts bunject.tgz",
+  "npm publish ./bunject.tgz --provenance --access public",
 ]) {
   if (!publishJob.includes(marker)) {
     failures.push(`Release publish is missing: ${marker}.`);

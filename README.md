@@ -321,7 +321,9 @@ Its [agent harness](./docs/harness.md) keeps architecture, execution state,
 documentation links, and core repository invariants machine-readable.
 The [public API reference](./docs/api.md), exact
 [production maturity criteria](./docs/maturity.md),
-[migration guides](./docs/migrations.md), [security policy](./SECURITY.md),
+[migration guides][migration-guides], [security policy](./SECURITY.md),
 and [support policy](./docs/support.md) are public. Passing those gates is not a
 claim of ecosystem adoption or battle-testing; those require real users and
 time.
+
+[migration-guides]: ./docs/migrations.md

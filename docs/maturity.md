@@ -68,6 +68,7 @@ callers may still hold.
 - [x] Local Bun 1.3.10 type, 164-test, and packed-consumer verification
 - [x] Packed tarball install plus isolated NodeNext, Bun, Node, declaration,
   and packaged-document link smoke
+- [x] Release publication lints and consumes the exact tarball passed to npm
 - [x] Node 22/24/26 runtime matrix configured
 - [x] Node matrix exercises async context, scope, coalescing, paths, and disposal
 - [x] Windows packed-consumer job configured

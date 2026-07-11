@@ -27,7 +27,7 @@ Ecosystem adoption and battle-testing remain external evidence.
   present and pass their available local checks.
 - npm publication now waits for latest/minimum Bun, Node 22/24/26, Windows, and
   Deno compatibility jobs; the repository harness mechanically checks that
-  release dependency and its OIDC provenance markers.
+  release dependency and its exact-tarball OIDC provenance markers.
 - Packed consumers now run the same concurrent async-context, error-path,
   singleton-coalescing, scope, and disposal scenario under Bun and Node. Deno
   2.0.0 and 2.8.1 pass type, standard-decorator, and runtime checks locally.
@@ -73,12 +73,13 @@ Ecosystem adoption and battle-testing remain external evidence.
   and callback lifetime. Inversify activation and TSyringe interception do not
   share one minimal contract, while provider `onActivation` already covers
   deterministic creation-time initialization.
+- Pack a release once, lint and consume that exact archive, then pass the same
+  file to `npm publish`; do not rebuild an unverified publication artifact.
 
 ## In progress
 
-- Preserve the locally verified baseline until a concrete chained-multi or
-  observer consumer, a published previous declaration, or the external
-  GitHub/npm release environment supplies new evidence.
+- Add opt-in chained parent/child multi-resolution across every affected public
+  and mutation/validation surface while preserving current shadowing by default.
 
 ## Remaining work
 
@@ -182,3 +183,8 @@ Ecosystem adoption and battle-testing remain external evidence.
 - 2026-07-11: rejected non-constructible functions in direct and descriptor
   dependency tuples at registration and reran all 164 tests, the harness, and
   the installed packed-consumer smoke under Bun 1.3.10.
+- 2026-07-11: made package lint and consumer smoke accept a supplied archive,
+  validated installed reference-style documentation with Bun's Markdown parser,
+  and made release publication verify and publish the same packed tarball.
+- 2026-07-11: adversarially confirmed that an unshipped reference-style document
+  target now fails the installed-tarball smoke before publication.

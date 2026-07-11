@@ -25,4 +25,4 @@ This project follows [Semantic Versioning](https://semver.org/).
 - Versioned agent map, architecture, execution plan, and mechanical repository
   harness based on repository-local, agent-readable feedback, plus a public API
   reference, knowledge reachability, reference/anchor and packed-document link
-  validation, and compatibility-gated OIDC publication.
+  validation, and compatibility-gated exact-tarball OIDC publication.
