@@ -14,7 +14,7 @@ Ecosystem adoption and battle-testing remain external evidence.
 - The complete local merge gate passes: 179 tests,
   99.32% overall lines, and 100% lines in every source module.
 - The verified runtime, public API, packaging, compatibility, and harness
-  baseline is committed through `5e3ea44`.
+  baseline is committed through `d6014f1`.
 - The activation-scoped `resolver()` descriptor and provider-level cleanup
   adapters have focused, type, coverage, packed-consumer, and combined-gate
   evidence.
@@ -110,9 +110,9 @@ Ecosystem adoption and battle-testing remain external evidence.
 
 ## In progress
 
-- Verify the profile-guided fast paths and runtime-boundary hardening across the
-  complete current/minimum Bun, Node package, Deno, type, API, size, and
-  repository gates, then commit the new baseline.
+- Establish the external GitHub/npm release baseline once the final repository
+  coordinates and publication authority are available, then verify the
+  configured remote compatibility matrix and OIDC provenance path.
 
 ## Remaining work
 
@@ -262,3 +262,5 @@ Ecosystem adoption and battle-testing remain external evidence.
   and size checks on Bun 1.3.10, packed Bun/Node consumption, Deno 2.0.0 and
   2.8.1 type/runtime smoke, TypeScript current and 5.4, isolated and peer
   benchmarks, and final independent contract, harness, and minimality reviews.
+- 2026-07-11: committed the verified profile-guided resolution, runtime-boundary
+  validation, and peer-free benchmark baseline as `d6014f1`.

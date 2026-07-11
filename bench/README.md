@@ -29,7 +29,7 @@ bun --cpu-prof-md bench/container.bench.ts '^bunject / warm singleton$'
 Reviewed isolated A/B (2026-07-11, Apple M5, Bun 1.3.14): five alternating
 fresh processes per version and exact-case filter produced these medians:
 
-| Case | `86cf1d4` | Target commit | Median reduction |
+| Case | `86cf1d4` | `d6014f1` | Median reduction |
 | --- | ---: | ---: | ---: |
 | warm singleton | 138.84 ns (MAD 1.69) | 62.11 ns (MAD 1.45) | 55.3% |
 | transient class | 217.01 ns (MAD 0.60) | 150.16 ns (MAD 3.11) | 30.8% |
@@ -41,9 +41,9 @@ power state, so they are not an acceptance threshold. Bunject does not claim
 to be the fastest container; correctness, diagnostics, and stable absolute
 overhead are the release criteria.
 
-The same peer-free benchmark entrypoint was applied to the `86cf1d4` source and
-the target source in temporary worktrees. Raw per-process averages, alternating
-baseline and target, were:
+The same peer-free benchmark entrypoint was applied to the `86cf1d4` and
+`d6014f1` source trees in temporary worktrees. Raw per-process averages,
+alternating baseline and target, were:
 
 - warm singleton: baseline `[136.71, 138.84, 139.99, 137.15, 144.01]` ns;
   target `[62.11, 60.66, 65.05, 61.27, 64.87]` ns;
