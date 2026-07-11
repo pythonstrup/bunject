@@ -11,10 +11,10 @@ Ecosystem adoption and battle-testing remain external evidence.
 ## Current evidence
 
 - Bun 1.3.14 and minimum Bun 1.3.10 are configured.
-- The complete local merge gate passes on the current worktree: 163 tests,
+- The complete local merge gate passes on the current worktree: 164 tests,
   97.62% overall lines, and 100% kernel lines.
 - The verified runtime, public API, packaging, compatibility, and harness
-  baseline is committed through `6245c8a`.
+  baseline is committed through `cf75ab1`.
 - The activation-scoped `resolver()` descriptor and provider-level cleanup
   adapters have focused, type, coverage, packed-consumer, and combined-gate
   evidence.
@@ -67,18 +67,24 @@ Ecosystem adoption and battle-testing remain external evidence.
   visible provider error; use `has()` when `T` itself can be `undefined` and
   presence must be distinguished.
 - Function tokens and `useClass` values must be constructible at registration.
+- Defer token-level observers until a consumer can state whether it needs
+  cache-hit events, hierarchy propagation, value transformation, async hooks,
+  and callback lifetime. Inversify activation and TSyringe interception do not
+  share one minimal contract, while provider `onActivation` already covers
+  deterministic creation-time initialization.
 
 ## In progress
 
-- Define the smallest coherent token-level observer contract before deciding
-  whether its cross-provider instrumentation value justifies the API.
+- Preserve the locally verified baseline until a concrete chained-multi or
+  observer consumer, a published previous declaration, or the external
+  GitHub/npm release environment supplies new evidence.
 
 ## Remaining work
 
 - Add opt-in chained parent/child multi-resolution only when a concrete
   aggregation use case justifies its cross-cutting semantics.
-- Define token-level observer cache-hit, hierarchy, async, and removal semantics
-  before adding the observer capability shared by Inversify and TSyringe.
+- Add token-level observers only after a concrete instrumentation consumer
+  defines cache-hit, hierarchy, async, cardinality, and removal semantics.
 - Compare declarations against the previous published tarball after the first
   release; the current hash is deliberately a drift/review gate, not a SemVer
   compatibility proof.
@@ -151,3 +157,22 @@ Ecosystem adoption and battle-testing remain external evidence.
   P0, P1, or P2 finding in the changed surface.
 - 2026-07-11: committed the optional-resolution and runtime-compatibility
   baseline as `6245c8a`.
+- 2026-07-11: independently compared token-level observation with Inversify
+  activation and TSyringe interception, then deferred it because their
+  creation/cache-hit, transform, async, and hierarchy contracts diverge and a
+  creation-only hook would duplicate Bunject's provider `onActivation`.
+- 2026-07-11: added a shrinking mutation-sequence property model that checks
+  transitive singleton invalidation, unrelated-cache identity, factory
+  cardinality, and repeated cache hits against an independent DAG oracle.
+- 2026-07-11: hardened the repository harness with AGENTS-rooted knowledge
+  reachability, native Bun Markdown reference/anchor checks, and indexed active
+  or completed plan structure with real calendar dates, without a new package.
+- 2026-07-11: adversarially verified broken anchors, orphan documents, invalid
+  plan dates, non-prose fake links, balanced/angle-bracket paths, fenced plan
+  examples, and duplicate heading collisions; reran the 164-test full gate,
+  Bun 1.3.10 property/harness checks, both supported Deno versions, and the peer
+  benchmark.
+- 2026-07-11: closed every P1/P2 from the independent correctness and
+  over-engineering reviews, directly verified the native harness under Bun
+  1.3.10, and passed the final 164-test complete gate with no remaining local
+  P0, P1, or P2 finding in the changed surface.

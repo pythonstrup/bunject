@@ -40,10 +40,15 @@ the objective, decisions, evidence, and exit criteria. Completed plans move to
 must remain visible in the active plan or maturity checklist.
 
 Documentation drift is a test failure. `scripts/harness-check.ts` verifies the
-required map, active-plan shape, local inline Markdown file targets, the full
-merge-gate composition, zero runtime dependencies, side-effect-free package
-metadata, standard-decorator compiler settings, and banned reflection imports
-across the source tree. It also requires the CI and release workflows, their
+required map; repository knowledge reachable from `AGENTS.md`; inline and
+reference-style local Markdown files and heading anchors; indexed
+active/completed plans with matching status, non-empty required sections, and
+dated progress. These checks use Bun's native Markdown parser so code blocks,
+nested lists, and reference links follow the runtime's real syntax without a
+new package. The harness also verifies the full merge-gate composition; zero
+runtime dependencies; side-effect-free package metadata;
+standard-decorator compiler settings; and banned reflection imports across the
+source tree. It also requires the CI and release workflows, their
 supported-runtime jobs, and the compatibility-gated OIDC provenance publish
 contract.
 

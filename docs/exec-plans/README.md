@@ -15,5 +15,7 @@ An active plan contains:
 Store active plans in `active/`. Move a plan to `completed/` only when every exit
 criterion is proven by current repository or external evidence. Do not mark an
 external publishing/adoption requirement complete from local configuration.
+Completed plans declare `Status: complete`; every active or completed plan must
+remain linked from this index.
 
 Current active plan: [DI library maturity](./active/di-maturity.md).

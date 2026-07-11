@@ -78,7 +78,8 @@ callers may still hold.
 - [x] Clean cross-platform build output without stale or unshipped declaration maps
 - [x] Zero runtime dependencies and allowlisted package payload
 - [x] MIT license, changelog, security policy, and support policy
-- [x] Repository invariants and local inline documentation targets checked mechanically
+- [x] Repository invariants, AGENTS-rooted knowledge reachability, local inline
+  and reference links/anchors, and execution-plan structure checked mechanically
 - [x] Deno 2.0.0 and latest-Deno-2 compatibility matrix configured
 - [x] Local Deno 2.0.0 and 2.8.1 type/decorator/runtime smoke
 - [x] OIDC provenance release workflow gated by the full compatibility matrix

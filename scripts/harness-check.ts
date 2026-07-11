@@ -1,6 +1,7 @@
 import { access, readdir, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isCalendarDate } from "./project-metadata";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const failures: string[] = [];
@@ -45,31 +46,6 @@ for (const target of [
 ]) {
   if (!agentMap.includes(target)) {
     failures.push(`AGENTS.md must point to ${target}.`);
-  }
-}
-
-const activePlanDirectory = join(root, "docs/exec-plans/active");
-const activePlans = (await readDirectoryIfPresent(activePlanDirectory))
-  .filter((file) => file.endsWith(".md"))
-  .sort();
-for (const file of activePlans) {
-  const plan = await readFile(join(activePlanDirectory, file), "utf8");
-  if (!plan.includes("Status: active")) {
-    failures.push(`${file} must declare \`Status: active\`.`);
-  }
-  for (const heading of [
-    "## Objective",
-    "## Decisions",
-    "## Remaining work",
-    "## Exit criteria",
-    "## Progress",
-  ]) {
-    if (!plan.includes(heading)) {
-      failures.push(`${file} is missing ${heading}.`);
-    }
-  }
-  if (!/^## (?:Current )?[Ee]vidence$/m.test(plan)) {
-    failures.push(`${file} is missing an evidence section.`);
   }
 }
 
@@ -237,43 +213,119 @@ async function collectMarkdown(directory: string): Promise<void> {
 }
 await collectMarkdown(root);
 
-const markdownLink = /!?\[[^\]]*\]\(([^)]+)\)/g;
+const markdownByFile = new Map(
+  await Promise.all(
+    markdownFiles.map(
+      async (file) => [file, await readFile(file, "utf8")] as const,
+    ),
+  ),
+);
+const markdownEdges = new Map<string, Set<string>>();
+const markdownFacts = new Map(
+  [...markdownByFile].map(([file, markdown]) => [
+    file,
+    inspectMarkdown(markdown, file),
+  ]),
+);
+const anchorsByFile = new Map(
+  [...markdownFacts].map(([file, facts]) => [file, facts.anchors]),
+);
+
 for (const file of markdownFiles) {
-  const markdown = await readFile(file, "utf8");
-  for (const match of markdown.matchAll(markdownLink)) {
-    let target = match[1]!.trim();
-    if (target.startsWith("<") && target.endsWith(">")) {
-      target = target.slice(1, -1);
+  for (const { target, navigable } of markdownFacts.get(file)!.links) {
+    await validateMarkdownTarget(file, target, navigable);
+  }
+}
+
+const knowledgeRoots = [join(root, "AGENTS.md")];
+const reachableMarkdown = new Set(knowledgeRoots);
+const pendingMarkdown = [...knowledgeRoots];
+while (pendingMarkdown.length > 0) {
+  const file = pendingMarkdown.pop()!;
+  for (const destination of markdownEdges.get(file) ?? []) {
+    if (reachableMarkdown.has(destination)) continue;
+    reachableMarkdown.add(destination);
+    pendingMarkdown.push(destination);
+  }
+}
+for (const file of markdownFiles) {
+  if (!reachableMarkdown.has(file)) {
+    failures.push(
+      `${relative(root, file)} is not reachable from a repository knowledge root.`,
+    );
+  }
+}
+
+const planIndex = join(root, "docs/exec-plans/README.md");
+const indexedPlans = markdownEdges.get(planIndex) ?? new Set<string>();
+for (const [folder, status] of [
+  ["active", "active"],
+  ["completed", "complete"],
+] as const) {
+  const directory = join(root, "docs/exec-plans", folder);
+  const plans = (await readDirectoryIfPresent(directory))
+    .filter((file) => file.endsWith(".md"))
+    .sort();
+  for (const file of plans) {
+    const path = join(directory, file);
+    const repositoryPath = relative(root, path);
+    const facts = markdownFacts.get(path)!;
+    const planStructure = facts.structure;
+    const planHeadings = [...planStructure.matchAll(/\0H([1-6]):([^\0]+)\0/g)].map(
+      (match) => ({ level: Number(match[1]), text: match[2]! }),
+    );
+    if (!indexedPlans.has(path)) {
+      failures.push(
+        `${repositoryPath} must be linked from docs/exec-plans/README.md.`,
+      );
     }
+    const statuses = [...planStructure.matchAll(/^Status:\s*(\S+)\s*$/gm)];
+    if (statuses.length !== 1 || statuses[0]![1] !== status) {
+      failures.push(
+        `${repositoryPath} must declare exactly one \`Status: ${status}\`.`,
+      );
+    }
+    const sections = [
+      "Objective",
+      "Decisions",
+      "Remaining work",
+      "Exit criteria",
+      "Progress",
+    ];
+    for (const heading of sections) {
+      const matches = planHeadings.filter(
+        (candidate) => candidate.level === 2 && candidate.text === heading,
+      );
+      if (matches.length !== 1 || !readSection(planStructure, heading)) {
+        failures.push(`${repositoryPath} must contain one non-empty ## ${heading}.`);
+      }
+    }
+    const evidenceHeadings = planHeadings.filter(
+      (candidate) =>
+        candidate.level === 2 && /^(?:Current )?[Ee]vidence$/.test(candidate.text),
+    );
+    const evidenceHeading = evidenceHeadings[0]?.text;
     if (
-      target.startsWith("#") ||
-      /^[A-Za-z][A-Za-z+.-]*:/.test(target)
+      evidenceHeadings.length !== 1 ||
+      evidenceHeading === undefined ||
+      !readSection(planStructure, evidenceHeading)
     ) {
-      continue;
+      failures.push(`${repositoryPath} must contain one non-empty evidence section.`);
     }
-    target = target.split("#", 1)[0]!;
-    if (!target) continue;
-    let decoded: string;
-    try {
-      decoded = decodeURIComponent(target);
-    } catch {
-      failures.push(`${relative(root, file)} has an invalid link: ${target}`);
-      continue;
+    const progress = readSection(planStructure, "Progress");
+    const entries = [...(progress?.matchAll(/\0I:([\s\S]*?)\0/g) ?? [])].map(
+      (match) => match[1]!.trim(),
+    );
+    if (entries.length === 0) {
+      failures.push(`${repositoryPath} must contain at least one progress entry.`);
     }
-    const destination = resolve(dirname(file), decoded);
-    const repositoryPath = relative(root, destination);
-    if (
-      repositoryPath === ".." ||
-      repositoryPath.startsWith(`..${sep}`) ||
-      isAbsolute(repositoryPath)
-    ) {
-      failures.push(`${relative(root, file)} links outside the repository: ${target}`);
-      continue;
-    }
-    try {
-      await access(destination);
-    } catch {
-      failures.push(`${relative(root, file)} has a broken link: ${target}`);
+    for (const entry of entries) {
+      const date = /^(\d{4}-\d{2}-\d{2}):\s+\S/.exec(entry)?.[1];
+      if (date === undefined || !isCalendarDate(date)) {
+        failures.push(
+          `${repositoryPath} has an invalid progress entry; use \`- YYYY-MM-DD: ...\`.`,
+        );
+      }
     }
   }
 }
@@ -288,7 +340,8 @@ console.log(
 );
 
 function throwHarnessFailure(): never {
-  throw new Error(`Harness check failed:\n- ${failures.join("\n- ")}`);
+  const uniqueFailures = [...new Set(failures)];
+  throw new Error(`Harness check failed:\n- ${uniqueFailures.join("\n- ")}`);
 }
 
 async function readDirectoryIfPresent(directory: string): Promise<string[]> {
@@ -298,4 +351,138 @@ async function readDirectoryIfPresent(directory: string): Promise<string[]> {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
   }
+}
+
+interface MarkdownFacts {
+  readonly anchors: Set<string>;
+  readonly headings: Array<{ readonly level: number; readonly text: string }>;
+  readonly links: Array<{ readonly target: string; readonly navigable: boolean }>;
+  readonly structure: string;
+}
+
+function inspectMarkdown(markdown: string, file: string): MarkdownFacts {
+  const anchors = new Set<string>();
+  const headings: MarkdownFacts["headings"] = [];
+  const links: MarkdownFacts["links"] = [];
+
+  Bun.markdown.render(markdown, {
+    heading: (children, { level }) => {
+      headings.push({ level, text: children });
+      const base = headingSlug(children);
+      let anchor = base;
+      let suffix = 0;
+      while (anchors.has(anchor)) {
+        suffix += 1;
+        anchor = `${base}-${suffix}`;
+      }
+      anchors.add(anchor);
+      return children;
+    },
+    link: (children, { href }) => {
+      links.push({ target: href, navigable: true });
+      return children;
+    },
+    image: (children, { src }) => {
+      links.push({ target: src, navigable: false });
+      return children;
+    },
+  });
+
+  const structure = Bun.markdown.render(markdown, {
+    heading: (children, { level }) => `\n\0H${level}:${children}\0\n`,
+    paragraph: (children) => `${children}\n`,
+    listItem: (children) => `\n\0I:${children}\0\n`,
+    th: (children) => `${children}\n`,
+    td: (children) => `${children}\n`,
+    link: (children) => children,
+    image: () => "",
+    code: () => "",
+    codespan: () => "\0C\0",
+    html: () => "",
+    blockquote: () => "",
+  });
+  for (const match of structure.matchAll(/!?\[([^\]\n]+)\]\[([^\]\n]*)\]/g)) {
+    failures.push(
+      `${relative(root, file)} uses undefined reference [${match[2] || match[1]}].`,
+    );
+  }
+
+  return { anchors, headings, links, structure };
+}
+
+function headingSlug(heading: string): string {
+  return heading
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s_-]/gu, "")
+    .trim()
+    .replace(/\s/g, "-");
+}
+
+async function validateMarkdownTarget(
+  source: string,
+  rawTarget: string,
+  navigable: boolean,
+): Promise<void> {
+  const target = rawTarget.trim();
+  if (
+    !target ||
+    target.startsWith("//") ||
+    /^[A-Za-z][A-Za-z+.-]*:/.test(target)
+  ) {
+    return;
+  }
+  const hash = target.indexOf("#");
+  const rawPath = hash === -1 ? target : target.slice(0, hash);
+  const rawAnchor = hash === -1 ? "" : target.slice(hash + 1);
+  let decodedPath: string;
+  let decodedAnchor: string;
+  try {
+    decodedPath = decodeURIComponent(rawPath);
+    decodedAnchor = decodeURIComponent(rawAnchor);
+  } catch {
+    failures.push(`${relative(root, source)} has an invalid link: ${target}`);
+    return;
+  }
+  const destination = rawPath ? resolve(dirname(source), decodedPath) : source;
+  const repositoryPath = relative(root, destination);
+  if (
+    repositoryPath === ".." ||
+    repositoryPath.startsWith(`..${sep}`) ||
+    isAbsolute(repositoryPath)
+  ) {
+    failures.push(
+      `${relative(root, source)} links outside the repository: ${target}`,
+    );
+    return;
+  }
+  try {
+    await access(destination);
+  } catch {
+    failures.push(`${relative(root, source)} has a broken link: ${target}`);
+    return;
+  }
+  if (destination.toLowerCase().endsWith(".md")) {
+    if (navigable) {
+      const edges = markdownEdges.get(source) ?? new Set<string>();
+      edges.add(destination);
+      markdownEdges.set(source, edges);
+    }
+    if (decodedAnchor) {
+      if (!anchorsByFile.get(destination)?.has(decodedAnchor)) {
+        failures.push(`${relative(root, source)} has a broken heading link: ${target}`);
+      }
+    }
+  }
+}
+
+function readSection(markdown: string, heading: string): string | undefined {
+  const marker = `\0H2:${heading}\0`;
+  const start = markdown.indexOf(marker);
+  if (start === -1) return undefined;
+  const bodyStart = start + marker.length;
+  const nextHeading = markdown.indexOf("\0H2:", bodyStart);
+  const content = markdown
+    .slice(bodyStart, nextHeading === -1 ? undefined : nextHeading)
+    .trim();
+  return content || undefined;
 }

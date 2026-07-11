@@ -24,5 +24,5 @@ This project follows [Semantic Versioning](https://semver.org/).
   an executable Bun HTTP request-scope example.
 - Versioned agent map, architecture, execution plan, and mechanical repository
   harness based on repository-local, agent-readable feedback, plus a public API
-  reference, packed-document link validation, and compatibility-gated OIDC
-  publication.
+  reference, knowledge reachability, reference/anchor and packed-document link
+  validation, and compatibility-gated OIDC publication.
