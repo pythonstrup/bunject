@@ -161,7 +161,7 @@ for (const script of [
     failures.push(`package.json is missing the ${script} script.`);
   }
 }
-const checkSteps = (packageJson.scripts?.check ?? "")
+const checkSteps = (packageJson.scripts?.["check"] ?? "")
   .split("&&")
   .map((step) => step.trim());
 for (const script of [
@@ -256,18 +256,42 @@ for (const marker of [
 
 const tsconfig = JSON.parse(
   await readFile(join(root, "tsconfig.json"), "utf8"),
-) as { compilerOptions?: Record<string, unknown> };
+) as {
+  compilerOptions?: Record<string, unknown>;
+  exclude?: unknown;
+  include?: unknown;
+};
 const buildTsconfig = JSON.parse(
   await readFile(join(root, "tsconfig.build.json"), "utf8"),
 ) as { compilerOptions?: Record<string, unknown> };
-if (tsconfig.compilerOptions?.experimentalDecorators === true) {
+const exampleTsconfig = JSON.parse(
+  await readFile(join(root, "examples/tsconfig.json"), "utf8"),
+) as { include?: unknown };
+if (tsconfig.compilerOptions?.["experimentalDecorators"] === true) {
   failures.push("Legacy experimentalDecorators must remain disabled.");
 }
-if (tsconfig.compilerOptions?.emitDecoratorMetadata === true) {
+if (tsconfig.compilerOptions?.["emitDecoratorMetadata"] === true) {
   failures.push("emitDecoratorMetadata must remain disabled.");
 }
-if (buildTsconfig.compilerOptions?.stripInternal !== true) {
+if (buildTsconfig.compilerOptions?.["stripInternal"] !== true) {
   failures.push("Internal kernel declarations must be stripped from the build.");
+}
+for (const directory of ["src", "test", "scripts", "bench"]) {
+  if (!Array.isArray(tsconfig.include) || !tsconfig.include.includes(directory)) {
+    failures.push(`The main typecheck must include ${directory}.`);
+  }
+}
+if (
+  !Array.isArray(tsconfig.exclude) ||
+  !tsconfig.exclude.includes("scripts/deno-smoke.ts")
+) {
+  failures.push("The Deno smoke must remain isolated under Deno's typechecker.");
+}
+if (
+  !Array.isArray(exampleTsconfig.include) ||
+  !exampleTsconfig.include.includes("./**/*")
+) {
+  failures.push("The example typecheck must include every TypeScript example.");
 }
 
 const sourceFiles: string[] = [];
@@ -324,12 +348,17 @@ if (/\bexport\s+(?:type\s+)?\*/.test(publicIndex)) {
 
 const ignoredDirectories = new Set([
   ".git",
+  ".idea",
+  ".vscode",
+  "build",
   "coverage",
   "dist",
   "node_modules",
+  "out",
 ]);
 const markdownFiles: string[] = [];
-async function collectMarkdown(directory: string): Promise<void> {
+const typeScriptFiles: string[] = [];
+async function collectRepositoryFiles(directory: string): Promise<void> {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     if (entry.isDirectory()) {
       if (
@@ -338,13 +367,31 @@ async function collectMarkdown(directory: string): Promise<void> {
       ) {
         continue;
       }
-      await collectMarkdown(join(directory, entry.name));
+      await collectRepositoryFiles(join(directory, entry.name));
     } else if (entry.name.endsWith(".md")) {
       markdownFiles.push(join(directory, entry.name));
+    } else if (/\.(?:[cm]?ts|tsx)$/.test(entry.name)) {
+      typeScriptFiles.push(join(directory, entry.name));
     }
   }
 }
-await collectMarkdown(root);
+await collectRepositoryFiles(root);
+
+for (const file of typeScriptFiles) {
+  const repositoryPath = relative(root, file).split(sep).join("/");
+  const coveredByMain = ["src", "test", "scripts", "bench"].some(
+    (directory) =>
+      repositoryPath !== "scripts/deno-smoke.ts" &&
+      repositoryPath.startsWith(`${directory}/`),
+  );
+  const coveredByExamples = repositoryPath.startsWith("examples/");
+  const coveredByDeno = repositoryPath === "scripts/deno-smoke.ts";
+  if (!coveredByMain && !coveredByExamples && !coveredByDeno) {
+    failures.push(
+      `${repositoryPath} is outside the repository TypeScript checkers.`,
+    );
+  }
+}
 
 const markdownByFile = new Map(
   await Promise.all(

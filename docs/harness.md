@@ -18,6 +18,8 @@ signals are:
 
 - focused deterministic tests for a reported behavior;
 - property and randomized stress tests for graph/scheduler behavior;
+- current and minimum TypeScript checks over source, tests, Bun harness scripts,
+  and benchmarks, with the Deno smoke isolated under Deno's typechecker;
 - current and pinned minimum TypeScript negative fixtures;
 - npm-packed TypeScript 5.4/current consumers plus a shared Bun/Node async
   context, scope, and disposal smoke, with native Markdown validation of the
@@ -29,7 +31,8 @@ signals are:
   JavaScript/declaration compressed-size gates;
 - isolated Bunject benchmarks plus informational peer context for performance
   evidence;
-- `harness:check` for repository maps, links, and design invariants.
+- `harness:check` for repository maps, links, TypeScript-checker coverage, and
+  design invariants.
 
 `bun run check` is the complete local merge gate. It must produce actionable
 errors without requiring a human to interpret hidden state. Run the Deno smoke
@@ -60,7 +63,9 @@ of the public export map, and Node consumer smoke rejects those subpaths.
 Declaration hashing includes
 every emitted `.d.ts` path and normalized content; size budgets aggregate every
 emitted `.js` and `.d.ts` file so splitting cannot evade either gate. The
-harness also requires the CI and release workflows, their
+harness rejects repository TypeScript files outside the main, example, or Deno
+checker domains so a new tool directory cannot silently become IDE-only. It
+also requires the CI and release workflows, their
 supported-runtime jobs, and the compatibility-gated OIDC provenance contract
 that lints, consumes, and publishes the same tarball. It parses the bug issue
 form with Bun's native YAML parser and requires the runtime, runtime version,

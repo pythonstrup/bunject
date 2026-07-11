@@ -303,3 +303,11 @@ Ecosystem adoption and battle-testing remain external evidence.
   issue after returning validation-cache ownership to `Container`; committed the
   verified resolution-kernel, contributor-intake, and release-hardening baseline
   as `b83bace`.
+- 2026-07-11: reproduced nine strict TypeScript errors hidden by the root
+  config's `src`/`test`-only coverage, corrected the harness and release checks,
+  and extended current and minimum TypeScript validation to Bun scripts and the
+  benchmark while keeping the Deno smoke under Deno's native typechecker.
+- 2026-07-11: made orphan TypeScript files a harness failure, broadened example
+  discovery, and verified zero diagnostics on TypeScript 7.0.2, the IntelliJ
+  5.9.3 service, and TypeScript 5.4.5. The complete 183-test gate and Deno 2.0.0
+  and 2.8.1 type/runtime smoke also pass.

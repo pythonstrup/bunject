@@ -24,14 +24,15 @@ const headings = changelog
   .split("\n")
   .filter((line) => line.startsWith(headingPrefix));
 
-if (headings.length !== 1) {
+const heading = headings[0];
+if (headings.length !== 1 || heading === undefined) {
   throw new Error(
     `CHANGELOG.md must contain exactly one heading for version ${version}.`,
   );
 }
 
 const release = process.argv.includes("--release");
-const releaseDate = headings[0].slice(headingPrefix.length);
+const releaseDate = heading.slice(headingPrefix.length);
 const validReleaseDate = isCalendarDate(releaseDate);
 if (releaseDate !== "Unreleased" && !validReleaseDate) {
   throw new Error(
@@ -41,15 +42,15 @@ if (releaseDate !== "Unreleased" && !validReleaseDate) {
 
 if (release) {
   assertStableRelease(projectVersion);
-  assertStableReleaseEvent(process.env.RELEASE_PRERELEASE);
+  assertStableReleaseEvent(process.env["RELEASE_PRERELEASE"]);
   assertReleaseRepository(
     packageJson.repository,
-    process.env.GITHUB_REPOSITORY,
+    process.env["GITHUB_REPOSITORY"],
   );
   const expectedTag = `v${version}`;
-  if (process.env.RELEASE_TAG !== expectedTag) {
+  if (process.env["RELEASE_TAG"] !== expectedTag) {
     throw new Error(
-      `Release tag must be ${expectedTag}, received ${process.env.RELEASE_TAG ?? "nothing"}.`,
+      `Release tag must be ${expectedTag}, received ${process.env["RELEASE_TAG"] ?? "nothing"}.`,
     );
   }
   if (releaseDate === "Unreleased") {
