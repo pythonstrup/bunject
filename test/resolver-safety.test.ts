@@ -170,6 +170,234 @@ describe("resolver safety", () => {
     expect(outcome).toMatchObject({ code: "CIRCULAR", path: [ASYNC, ASYNC] });
   });
 
+  test("isolates provider lookup across container families", () => {
+    const SHARED = token<object>("SHARED");
+    const A = token<object>("A");
+    const B = token<object>("B");
+    const CALLBACK = token<() => object>("CALLBACK");
+    const firstValue = {};
+    const secondValue = {};
+    let bCalls = 0;
+    const first = new Container();
+    const second = new Container();
+    first.register(SHARED, { useValue: firstValue });
+    second.register(SHARED, { useValue: secondValue });
+    first.register(A, { useFactory: () => second.resolve(B) });
+    second.register(B, {
+      useFactory: () => {
+        bCalls += 1;
+        return first.resolve(A);
+      },
+    });
+    first.register(CALLBACK, {
+      useFactory: () => () => second.resolve(SHARED),
+    });
+
+    expect(first.resolve(SHARED)).toBe(firstValue);
+    expect(second.resolve(SHARED)).toBe(secondValue);
+    expect(() => first.resolve(A)).toThrow(
+      expect.objectContaining({
+        code: "CAPTIVE_DEPENDENCY",
+        path: [A, B],
+      }),
+    );
+    expect(bCalls).toBe(0);
+    expect(first.resolve(CALLBACK)()).toBe(secondValue);
+  });
+
+  test("rejects nested async lookup across container families", async () => {
+    const A = token<object>("A");
+    const B = token<object>("B");
+    let bCalls = 0;
+    const first = new Container();
+    const second = new Container();
+    first.register(A, {
+      scope: "singleton",
+      useFactoryAsync: () => second.resolveAsync(B),
+    });
+    second.register(B, {
+      scope: "singleton",
+      useFactoryAsync: () => {
+        bCalls += 1;
+        return first.resolveAsync(A);
+      },
+    });
+
+    const outcome = await Promise.race([
+      first.resolveAsync(A).catch((error) => error),
+      Bun.sleep(100).then(() => "timeout" as const),
+    ]);
+
+    expect(outcome).not.toBe("timeout");
+    expect(outcome).toMatchObject({
+      code: "CAPTIVE_DEPENDENCY",
+      path: [A, B],
+    });
+    expect(bCalls).toBe(0);
+  });
+
+  test("isolates concurrent async roots across container families", async () => {
+    const A = token<object>("A");
+    const B = token<object>("B");
+    const first = new Container();
+    const second = new Container();
+    const ready = Promise.withResolvers<void>();
+    let waiting = 0;
+    const rendezvous = async (): Promise<void> => {
+      waiting += 1;
+      if (waiting === 2) ready.resolve();
+      await ready.promise;
+    };
+    first.register(A, {
+      scope: "singleton",
+      useFactoryAsync: async () => {
+        await rendezvous();
+        return second.resolveAsync(B);
+      },
+    });
+    second.register(B, {
+      scope: "singleton",
+      useFactoryAsync: async () => {
+        await rendezvous();
+        return first.resolveAsync(A);
+      },
+    });
+
+    const outcome = await Promise.race([
+      Promise.allSettled([first.resolveAsync(A), second.resolveAsync(B)]),
+      Bun.sleep(100).then(() => "timeout" as const),
+    ]);
+
+    expect(outcome).not.toBe("timeout");
+    for (const result of outcome as PromiseSettledResult<object>[]) {
+      expect(result.status).toBe("rejected");
+      expect((result as PromiseRejectedResult).reason).toMatchObject({
+        code: "CAPTIVE_DEPENDENCY",
+      });
+    }
+  });
+
+  test("rejects absent cross-family queries before lookup", async () => {
+    const MISSING = token<object>("MISSING");
+    const HAS = token<boolean>("HAS");
+    const OPTIONAL = token<object | undefined>("OPTIONAL");
+    const ALL = token<readonly object[]>("ALL");
+    const OPTIONAL_ASYNC = token<object | undefined>("OPTIONAL_ASYNC");
+    const ALL_ASYNC = token<readonly object[]>("ALL_ASYNC");
+    const VALIDATE = token<boolean>("VALIDATE");
+    const INSPECT = token<boolean>("INSPECT");
+    const first = new Container();
+    const second = new Container();
+    first.register(HAS, { useFactory: () => second.has(MISSING) });
+    first.register(OPTIONAL, {
+      useFactory: () => second.resolveOptional(MISSING),
+    });
+    first.register(ALL, {
+      useFactory: () => second.resolveAll(MISSING),
+    });
+    first.register(OPTIONAL_ASYNC, {
+      useFactoryAsync: () => second.resolveOptionalAsync(MISSING),
+    });
+    first.register(ALL_ASYNC, {
+      useFactoryAsync: () => second.resolveAllAsync(MISSING),
+    });
+    first.register(VALIDATE, {
+      useFactory: () => {
+        second.validate(MISSING);
+        return true;
+      },
+    });
+    first.register(INSPECT, {
+      useFactory: () => second.inspect(MISSING).providers.length > 0,
+    });
+
+    expect(() => first.resolve(HAS)).toThrow(
+      expect.objectContaining({ code: "CAPTIVE_DEPENDENCY" }),
+    );
+    expect(() => first.resolve(OPTIONAL)).toThrow(
+      expect.objectContaining({ code: "CAPTIVE_DEPENDENCY" }),
+    );
+    expect(() => first.resolve(ALL)).toThrow(
+      expect.objectContaining({ code: "CAPTIVE_DEPENDENCY" }),
+    );
+    await expect(first.resolveAsync(OPTIONAL_ASYNC)).rejects.toMatchObject({
+      code: "CAPTIVE_DEPENDENCY",
+    });
+    await expect(first.resolveAsync(ALL_ASYNC)).rejects.toMatchObject({
+      code: "CAPTIVE_DEPENDENCY",
+    });
+    expect(() => first.resolve(VALIDATE)).toThrow(
+      expect.objectContaining({ code: "CAPTIVE_DEPENDENCY" }),
+    );
+    expect(() => first.resolve(INSPECT)).toThrow(
+      expect.objectContaining({ code: "CAPTIVE_DEPENDENCY" }),
+    );
+  });
+
+  test("restores an active outer context hidden by an inactive microtask", async () => {
+    const A = token<object>("A");
+    const B = token<{ readonly pending: Promise<object> }>("B");
+    const container = new Container();
+    container.register(B, {
+      useFactory: () => ({
+        pending: Promise.resolve().then(() => container.resolveAsync(A)),
+      }),
+    });
+    container.register(A, {
+      scope: "singleton",
+      useFactoryAsync: async () => container.resolve(B).pending,
+    });
+
+    const outcome = await Promise.race([
+      container.resolveAsync(A).catch((error) => error),
+      Bun.sleep(100).then(() => "timeout" as const),
+    ]);
+
+    expect(outcome).not.toBe("timeout");
+    expect(outcome).toMatchObject({
+      code: "CIRCULAR",
+      path: [A, B, A],
+      cycle: [A, B, A],
+    });
+  });
+
+  test("does not treat an inactive deferred frame as a cycle", async () => {
+    interface Value {
+      readonly id: number;
+      readonly pending: Promise<Value | undefined>;
+    }
+    const A = token<{
+      readonly first: Value;
+      readonly second: Value | undefined;
+    }>("A");
+    const B = token<Value>("B");
+    let calls = 0;
+    const container = new Container();
+    container.register(B, {
+      useFactory: () => {
+        const id = ++calls;
+        return {
+          id,
+          pending:
+            id === 1
+              ? Promise.resolve().then(() => container.resolve(B))
+              : Promise.resolve(undefined),
+        };
+      },
+    });
+    container.register(A, {
+      useFactoryAsync: async () => {
+        const first = container.resolve(B);
+        return { first, second: await first.pending };
+      },
+    });
+
+    const result = await container.resolveAsync(A);
+    expect(result.first.id).toBe(1);
+    expect(result.second?.id).toBe(2);
+    expect(calls).toBe(2);
+  });
+
   test("detects dynamic cycles across concurrent resolution roots", async () => {
     const A = token<object>("A");
     const B = token<object>("B");
@@ -288,6 +516,125 @@ describe("resolver safety", () => {
       expect((result as PromiseRejectedResult).reason).toMatchObject({
         code: "CIRCULAR",
       });
+    }
+  });
+
+  test("preflights dynamic back-edges before singleton side effects", () => {
+    for (const warmValidationCache of [false, true]) {
+      const A = token<object>(`A:${warmValidationCache}`);
+      const B = token<object>(`B:${warmValidationCache}`);
+      const SIDE_EFFECT = token<object>(`SIDE_EFFECT:${warmValidationCache}`);
+      let creations = 0;
+      const container = new Container();
+      container.register(SIDE_EFFECT, {
+        scope: "singleton",
+        useFactory: () => {
+          creations += 1;
+          return {};
+        },
+      });
+      container.register(B, {
+        inject: [SIDE_EFFECT, A],
+        useFactory: (sideEffect, _a) => sideEffect,
+      });
+      container.register(A, { useFactory: () => container.resolve(B) });
+      if (warmValidationCache) container.validate(B);
+
+      expect(() => container.resolve(A)).toThrow(
+        expect.objectContaining({
+          code: "CIRCULAR",
+          path: [A, B, A],
+          cycle: [A, B, A],
+        }),
+      );
+      expect(creations).toBe(0);
+    }
+  });
+
+  test("preflights cached async back-edges before singleton side effects", async () => {
+    const A = token<object>("ASYNC_A");
+    const B = token<object>("ASYNC_B");
+    const SIDE_EFFECT = token<object>("ASYNC_SIDE_EFFECT");
+    let creations = 0;
+    const container = new Container();
+    container.register(SIDE_EFFECT, {
+      scope: "singleton",
+      useFactory: () => {
+        creations += 1;
+        return {};
+      },
+    });
+    container.register(B, {
+      inject: [SIDE_EFFECT, A],
+      useFactory: (sideEffect, _a) => sideEffect,
+    });
+    container.register(A, {
+      useFactoryAsync: () => container.resolveAsync(B),
+    });
+    container.validate(B, { async: true });
+
+    await expect(container.resolveAsync(A)).rejects.toMatchObject({
+      code: "CIRCULAR",
+      path: [A, B, A],
+      cycle: [A, B, A],
+    });
+    expect(creations).toBe(0);
+  });
+
+  test("preflights cached dynamic all back-edges before side effects", async () => {
+    for (const chained of [false, true]) {
+      const SYNC_A = token<object>(`SYNC_ALL_A:${chained}`);
+      const SYNC_B = token<object>(`SYNC_ALL_B:${chained}`);
+      const SYNC_SIDE = token<object>(`SYNC_ALL_SIDE:${chained}`);
+      let syncCreations = 0;
+      const sync = new Container();
+      sync.register(SYNC_SIDE, {
+        scope: "singleton",
+        useFactory: () => {
+          syncCreations += 1;
+          return {};
+        },
+      });
+      sync.registerMulti(SYNC_B, {
+        inject: [SYNC_SIDE, SYNC_A],
+        useFactory: (sideEffect, _a) => sideEffect,
+      });
+      sync.register(SYNC_A, {
+        useFactory: () => sync.resolveAll(SYNC_B, { chained })[0]!,
+      });
+      sync.validate(SYNC_B, { all: true, chained });
+
+      expect(() => sync.resolve(SYNC_A)).toThrow(
+        expect.objectContaining({ code: "CIRCULAR" }),
+      );
+      expect(syncCreations).toBe(0);
+
+      const ASYNC_A = token<object>(`ASYNC_ALL_A:${chained}`);
+      const ASYNC_B = token<object>(`ASYNC_ALL_B:${chained}`);
+      const ASYNC_SIDE = token<object>(`ASYNC_ALL_SIDE:${chained}`);
+      let asyncCreations = 0;
+      const async = new Container();
+      async.register(ASYNC_SIDE, {
+        scope: "singleton",
+        useFactory: () => {
+          asyncCreations += 1;
+          return {};
+        },
+      });
+      async.registerMulti(ASYNC_B, {
+        inject: [ASYNC_SIDE, ASYNC_A],
+        useFactory: (sideEffect, _a) => sideEffect,
+      });
+      async.register(ASYNC_A, {
+        useFactoryAsync: async () =>
+          (await async.resolveAllAsync(ASYNC_B, { chained }))[0]!,
+      });
+      async.validate(ASYNC_B, { async: true, all: true, chained });
+
+      await expect(async.resolveAsync(ASYNC_A)).rejects.toMatchObject({
+        code: "CIRCULAR",
+      });
+      expect(asyncCreations).toBe(0);
     }
   });
 

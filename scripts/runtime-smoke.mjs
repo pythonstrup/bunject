@@ -30,6 +30,34 @@ export async function runRuntimeSmoke(bunject) {
     resolver,
     token,
   } = bunject;
+  const settleWithin = async (promise, label) => {
+    let timer;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`${label} timed out`)),
+            1000,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  const expectResolutionError = async (promise, code, label) => {
+    const outcome = await settleWithin(
+      promise.then(
+        () => undefined,
+        (error) => error,
+      ),
+      label,
+    );
+    if (!(outcome instanceof ResolutionError) || outcome.code !== code) {
+      throw new Error(`${label} did not report ${code}`);
+    }
+  };
   const VALUE = token("VALUE");
   const MISSING = token("MISSING");
   const RESOLUTION_VALUE = token("RESOLUTION_VALUE");
@@ -50,6 +78,60 @@ export async function runRuntimeSmoke(bunject) {
     registrationError = error instanceof RegistrationError;
   }
   if (!registrationError) throw new Error("Registration error identity failed");
+
+  const CROSS_A = token("CROSS_A");
+  const CROSS_B = token("CROSS_B");
+  const crossFirst = new Container();
+  const crossSecond = new Container();
+  let crossCalls = 0;
+  crossFirst.register(CROSS_A, {
+    scope: "singleton",
+    useFactoryAsync: () => crossSecond.resolveAsync(CROSS_B),
+  });
+  crossSecond.register(CROSS_B, {
+    scope: "singleton",
+    useFactoryAsync: () => {
+      crossCalls += 1;
+      return crossFirst.resolveAsync(CROSS_A);
+    },
+  });
+  await expectResolutionError(
+    crossFirst.resolveAsync(CROSS_A),
+    "CAPTIVE_DEPENDENCY",
+    "Cross-family nested lookup",
+  );
+  if (crossCalls !== 0) throw new Error("Cross-family provider was constructed");
+
+  const POST_VALUE = token("POST_VALUE");
+  const POST_LOOKUP = token("POST_LOOKUP");
+  const postValue = {};
+  crossSecond.register(POST_VALUE, { useValue: postValue });
+  crossFirst.register(POST_LOOKUP, {
+    useFactory: () => ({
+      pending: Promise.resolve().then(() => crossSecond.resolve(POST_VALUE)),
+    }),
+  });
+  if ((await crossFirst.resolve(POST_LOOKUP).pending) !== postValue) {
+    throw new Error("Post-activation independent lookup was not fresh");
+  }
+
+  const INACTIVE_A = token("INACTIVE_A");
+  const INACTIVE_B = token("INACTIVE_B");
+  const inactive = new Container();
+  inactive.register(INACTIVE_B, {
+    useFactory: () => ({
+      pending: Promise.resolve().then(() => inactive.resolveAsync(INACTIVE_A)),
+    }),
+  });
+  inactive.register(INACTIVE_A, {
+    scope: "singleton",
+    useFactoryAsync: async () => inactive.resolve(INACTIVE_B).pending,
+  });
+  await expectResolutionError(
+    inactive.resolveAsync(INACTIVE_A),
+    "CIRCULAR",
+    "Inactive nested context cycle",
+  );
 
   const container = new Container();
   container.register(VALUE, { useValue: 42 });
@@ -155,4 +237,9 @@ export async function runRuntimeSmoke(bunject) {
   await scope.disposeAsync();
   if (disposals !== 1) throw new Error("Runtime disposal smoke test failed");
   await container.disposeAsync();
+  await Promise.all([
+    crossFirst.disposeAsync(),
+    crossSecond.disposeAsync(),
+    inactive.disposeAsync(),
+  ]);
 }

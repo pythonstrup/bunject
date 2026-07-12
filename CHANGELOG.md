@@ -56,3 +56,12 @@ This project follows [Semantic Versioning](https://semver.org/).
   prerelease events, with lifecycle-free packing of the already verified build.
 - Public repository package metadata and an explicit Windows `cmd.exe` wrapper
   for npm-backed packed-consumer verification.
+- Active resolution now restores same-family causal context through inactive
+  nested microtasks, so immediate sync/async cycles and captive lifetimes fail
+  deterministically instead of hanging or losing their root path.
+- Dynamic graph preflight now includes the active prefix even after root
+  validation has been cached, preventing circular branches from constructing
+  earlier singleton side effects.
+- Independently created container families are isolated during provider
+  activation: resolution, query, validation, and inspection reject the first
+  cross-family lookup before construction or provider disclosure.

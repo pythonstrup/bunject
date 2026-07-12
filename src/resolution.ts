@@ -76,6 +76,7 @@ export interface LifetimeCaptor {
 export interface ResolutionContext {
   readonly container: Container;
   readonly family: ContainerFamily;
+  readonly parent: ResolutionContext | undefined;
   readonly path: readonly AnyToken[];
   readonly session: ResolutionSession;
   readonly construction: Construction | undefined;
@@ -263,7 +264,7 @@ export function validateGraph({
   }
   type VisitStates = Map<Container, Map<Registration, Set<string>>>;
   const states: VisitStates = new Map();
-  const stack: Frame[] = [];
+  const stack: Frame[] = prefix.map((token) => ({ token }));
   const containerIds = new Map<Container, number>();
   const containerId = (container: Container): number => {
     const known = containerIds.get(container);
@@ -508,11 +509,7 @@ export function validateGraph({
     allBindings = false,
     chainedBindings = false,
   ): void => {
-    const path = [
-      ...prefix,
-      ...stack.map((frame) => frame.token),
-      token,
-    ];
+    const path = [...stack.map((frame) => frame.token), token];
     const bindingSets = access.lookupSets(
       currentLookup,
       token,
@@ -692,19 +689,6 @@ export function strongerCaptor(
   if (!first) return second;
   if (!second) return first;
   return second.rank >= first.rank ? second : first;
-}
-
-/** @internal */
-export function captorConstraints(
-  first?: LifetimeCaptor,
-  second?: LifetimeCaptor,
-): readonly LifetimeCaptor[] {
-  if (!first) return second ? [second] : [];
-  if (!second) return [first];
-  if (first.rank === second.rank && first.domain === second.domain) {
-    return [second];
-  }
-  return [first, second];
 }
 
 function lifetimeRank(

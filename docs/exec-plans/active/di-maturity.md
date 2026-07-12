@@ -11,12 +11,12 @@ Ecosystem adoption and battle-testing remain external evidence.
 ## Current evidence
 
 - Bun 1.3.14 and minimum Bun 1.3.10 are configured.
-- The complete local merge gate passes: 188 tests and 11,034 assertions with
-  99.11% overall lines and 99.91% functions. The private-state Container and
+- The complete local merge gate passes: 203 tests and 11,090 assertions with
+  99.29% overall lines and 99.92% functions. The private-state Container and
   every focused leaf retain 100% line coverage; the extracted resolution kernel
-  has 95.05% lines and 100% functions.
+  has 96.48% lines and 100% functions.
 - The runtime, public API, packaging, compatibility, and harness baseline is
-  committed and pushed through `958e31f` on public `origin/main`.
+  committed and pushed through `ad20c86` on public `origin/main`.
 - The activation-scoped `resolver()` descriptor and provider-level cleanup
   adapters have focused, type, coverage, packed-consumer, and combined-gate
   evidence.
@@ -30,10 +30,11 @@ Ecosystem adoption and battle-testing remain external evidence.
 - npm publication now waits for latest/minimum Bun, Node 22/24/26, Windows, and
   Deno compatibility jobs; the repository harness mechanically checks that
   release dependency and its exact-tarball OIDC provenance markers.
-- Packed consumers now run the same concurrent async-context, error-path,
-  singleton-coalescing, scope, and disposal scenario under Bun and Node. Deno
-  2.0.0 and 2.8.1 pass type, standard-decorator, and runtime checks locally.
-- Bun 1.3.10 passes the source typecheck, all 188 tests, and the installed
+- Packed consumers now run the same concurrent async-context, inactive-context
+  cycle, independent-family isolation, error-path, singleton-coalescing, scope,
+  and disposal scenario under Bun and Node. Deno 2.0.0 and 2.8.1 pass type,
+  standard-decorator, and runtime checks locally.
+- Bun 1.3.10 passes the source typecheck, all 203 tests, and the installed
   packed-consumer smoke locally.
 - Container and Resolver optional sync/async resolution preserve every visible
   provider failure and track absent dynamic edges for cache invalidation.
@@ -56,6 +57,8 @@ Ecosystem adoption and battle-testing remain external evidence.
   metadata now exist. Its [first CI run][first-public-ci] exposed an npm shim
   lookup bug on Windows; the corrected [second CI run][second-public-ci] passed
   quality, minimum Bun, Windows packaging, Node 22/24/26, and Deno 2.0/latest.
+- The [workflow-hardening CI run][workflow-hardening-ci] passed all eight jobs
+  after exact command and pinned-action checks were tightened.
 - npm trusted publisher and provenance publication are not configured or
   verified, and private vulnerability reporting is still disabled.
 
@@ -124,6 +127,12 @@ Ecosystem adoption and battle-testing remain external evidence.
 - Enforce `undefined` results from activation, synchronous disposal, and
   registration-module callbacks, and an `undefined` fulfillment from async
   disposal callbacks, matching the public callback types.
+- Treat a root and its descendants as one container family. During provider
+  activation, direct lookup may target only the activation container or an
+  ancestor in that family; reject sibling, descendant, and independent-root
+  lookups before reading providers. Supporting independent-family bridges would
+  require federated lifetime, resolution-session, wait-graph, mutation, and
+  ownership semantics and is not an implicit container contract.
 
 ## In progress
 
@@ -360,6 +369,30 @@ Ecosystem adoption and battle-testing remain external evidence.
   runtime and 6,909 declaration gzip bytes. The overload-safe type contract
   crossed the 6 KiB declaration ceiling by 765 bytes, so its reviewed ceiling
   is now 7 KiB.
+- 2026-07-12: restored the nearest active same-family context when a microtask
+  inherits an inactive nested provider frame, preserving complete immediate
+  cycle detection and every causal lifetime constraint without treating a
+  completed finite frame as a cycle.
+- 2026-07-12: isolated independently created container families during active
+  provider lookup across resolution, availability, validation, and inspection;
+  the first disallowed hop now fails before construction or provider disclosure,
+  while post-activation lookups remain fresh graphs.
+- 2026-07-12: made dynamic preflight include its active prefix even after a root
+  validation cache is warm, covering nearest/chained and sync/async multi paths
+  before earlier singleton side effects. Validation and inspection queries now
+  also participate in mutation invalidation.
+- 2026-07-12: passed the 203-test complete gate with 11,090 assertions, 99.29%
+  overall line and 99.92% function coverage, 17,295-byte runtime and 6,909-byte
+  declaration gzip output, Bun 1.3.10 source/package verification, packed
+  Bun/Node smoke, and Deno 2.0.0/2.8.1 type/runtime checks.
+- 2026-07-12: independent five-process comparison against `ad20c86` found no
+  hot-path regression after the context fix: warm-singleton median 30.50 ns
+  versus 32.51 ns and transient-class median 66.29 ns versus 71.89 ns on the
+  same Bun 1.3.14 host.
+- 2026-07-12: three independent final reviews found no remaining P0-P2
+  correctness, minimality, performance, documentation, or packed-runtime issue
+  after the complete current/minimum Bun, Node, Deno, and repository gates.
 
 [first-public-ci]: https://github.com/pythonstrup/bunject/actions/runs/29155458515
 [second-public-ci]: https://github.com/pythonstrup/bunject/actions/runs/29176357356
+[workflow-hardening-ci]: https://github.com/pythonstrup/bunject/actions/runs/29180327856

@@ -62,12 +62,22 @@ Synchronous and asynchronous APIs are separate. Pending cached providers carry
 a construction wait graph so concurrent roots coalesce without hiding cycles.
 Async-local resolution context preserves the active path, child container,
 lifetime captor, resolution cache, and runtime dependency collector.
+Context frames retain their causal parent. If a microtask inherits a completed
+nested frame, lookup skips that inactive frame and restores the nearest active
+same-family frame, preserving cycle and lifetime paths without joining
+independent container families. Dynamic preflight seeds graph traversal with
+that active path and does not reuse a root-only validation cache for a prefixed
+graph.
 
 ## Hierarchy and mutation
 
 Lookup travels only from the active container toward its ancestors. A parent
 singleton therefore resolves against its owner, while inherited scoped,
 resolution, and transient providers activate in the requesting child.
+Each independently created root starts a separate container family. During
+provider activation, `resolve*`, `resolveAll*`, `has`, `validate`, and `inspect`
+reject a first lookup into a sibling, descendant, or independent family before
+reading its providers. Calls begun after activation are fresh graphs.
 
 Each resolution increments counters on exactly that upward lookup path.
 Registration mutation is rejected only on containers visible to an active

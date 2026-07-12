@@ -214,6 +214,11 @@ Calls made during provider activation join the active resolution path and are
 tracked for cycles, lifetimes, and later registry mutation. Calls made after
 activation re-read the latest registry without making their holder depend on a
 future target, but retain the holder's captured lifetime and ownership limits.
+An active provider may use direct container APIs only against its activation
+container or an ancestor in the same root/descendant family. Independent root
+containers stay isolated: their first lookup is rejected before inspection or
+construction. A callback invoked after activation may start a fresh lookup in
+another independent container.
 
 Single and multi registration modes cannot be mixed for one token in the same
 container. A local set shadows the complete parent set unless that particular
@@ -345,8 +350,9 @@ Resolution path: UserController -> UserService -> UserRepository -> DATABASE
 - Synchronous activation, disposal, and module callbacks use block bodies with
   no returned expression. Their `undefined` return contract prevents TypeScript's
   `void` assignability rule from silently accepting an `async` function.
-- Dynamic provider resolution may target its activation container or an
-  ancestor, not a sibling or descendant. This prevents lifetime and ownership
+- Dynamic provider lookup may target its activation container or an ancestor in
+  the same container family, not a sibling, descendant, or independent root.
+  This prevents lifetime, ownership, cache-invalidation, and async-context
   leaks.
 - Circular proxies are not created; eager and immediate dynamic cycles fail
   with a structured error. Use `lazy()` or an injected `Resolver` for an

@@ -22,8 +22,9 @@ signals are:
   and benchmarks, with the Deno smoke isolated under Deno's typechecker;
 - current and pinned minimum TypeScript negative fixtures;
 - npm-packed TypeScript 5.4/current consumers plus a shared Bun/Node async
-  context, scope, and disposal smoke, with native Markdown validation of the
-  installed documentation;
+  context, scope, disposal, inactive-microtask cycle, and independent-family
+  isolation smoke, with native Markdown validation of the installed
+  documentation;
 - standard-decorator and type-checked self-package smoke on Deno 2.0.0 and the
   current Deno 2 line;
 - an executable, type-checked Bun HTTP request-scope example;

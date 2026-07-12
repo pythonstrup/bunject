@@ -245,6 +245,143 @@ describe("container scopes", () => {
     }
   });
 
+  test("rejects lookup across an independent container boundary", () => {
+    const SCOPED = token<object>("SCOPED");
+    const BRIDGE = token<object>("BRIDGE");
+    const SINGLETON = token<object>("SINGLETON");
+    const application = new Container();
+    const independent = new Container();
+    application.register(SCOPED, {
+      scope: "scoped",
+      useFactory: () => ({}),
+    });
+    independent.register(BRIDGE, {
+      useFactory: () => application.resolve(SCOPED),
+    });
+    application.register(SINGLETON, {
+      scope: "singleton",
+      useFactory: () => independent.resolve(BRIDGE),
+    });
+
+    expect(() => application.resolve(SINGLETON)).toThrow(
+      expect.objectContaining({
+        code: "CAPTIVE_DEPENDENCY",
+        path: [SINGLETON, BRIDGE],
+      }),
+    );
+  });
+
+  test("preserves lifetime constraints through an inactive nested context", async () => {
+    const SCOPED = token<object>("SCOPED");
+    const BRIDGE = token<{ readonly pending: Promise<object> }>("BRIDGE");
+    const SINGLETON = token<object>("SINGLETON");
+    const container = new Container();
+    container.register(SCOPED, {
+      scope: "scoped",
+      useFactory: () => ({}),
+    });
+    container.register(BRIDGE, {
+      useFactory: () => ({
+        pending: Promise.resolve().then(() => container.resolveAsync(SCOPED)),
+      }),
+    });
+    container.register(SINGLETON, {
+      scope: "singleton",
+      useFactoryAsync: async () => container.resolve(BRIDGE).pending,
+    });
+
+    await expect(container.resolveAsync(SINGLETON)).rejects.toMatchObject({
+      code: "CAPTIVE_DEPENDENCY",
+      path: [SINGLETON, SCOPED],
+    });
+  });
+
+  test("preserves a stronger captor from an inactive nested context", async () => {
+    const SCOPED = token<object>("SCOPED");
+    const BRIDGE = token<{ value?: object; readonly pending: Promise<void> }>(
+      "BRIDGE",
+    );
+    const ROOT = token<object>("ROOT");
+    const container = new Container();
+    container.register(SCOPED, {
+      scope: "scoped",
+      useFactory: () => ({}),
+    });
+    container.register(BRIDGE, {
+      scope: "singleton",
+      useFactory: () => {
+        const bridge: { value?: object; readonly pending: Promise<void> } = {
+          pending: Promise.resolve().then(async () => {
+            bridge.value = await container.resolveAsync(SCOPED);
+          }),
+        };
+        return bridge;
+      },
+    });
+    container.register(ROOT, {
+      useFactoryAsync: async () => {
+        const bridge = container.resolve(BRIDGE);
+        await bridge.pending;
+        return bridge.value!;
+      },
+    });
+
+    await expect(container.resolveAsync(ROOT)).rejects.toMatchObject({
+      code: "CAPTIVE_DEPENDENCY",
+      path: [ROOT, SCOPED],
+    });
+  });
+
+  test("preserves an ancestor captor across an inactive child context", async () => {
+    const TARGET = token<object>("TARGET");
+    const BRIDGE = token<{ value?: object; readonly pending: Promise<void> }>(
+      "BRIDGE",
+    );
+    const ROOT = token<object>("ROOT");
+    const parent = new Container();
+    const child = parent.createScope();
+    let targetCalls = 0;
+    let bridgeInstance:
+      | { value?: object; readonly pending: Promise<void> }
+      | undefined;
+    child.register(TARGET, {
+      scope: "singleton",
+      useFactory: () => {
+        targetCalls += 1;
+        return {};
+      },
+    });
+    parent.register(BRIDGE, {
+      scope: "singleton",
+      useFactory: () => {
+        const bridge: { value?: object; readonly pending: Promise<void> } = {
+          pending: Promise.resolve().then(async () => {
+            bridge.value = await child.resolveAsync(TARGET);
+          }),
+        };
+        bridgeInstance = bridge;
+        return bridge;
+      },
+    });
+    child.register(ROOT, {
+      scope: "singleton",
+      useFactoryAsync: async () => {
+        const bridge = parent.resolve(BRIDGE);
+        await bridge.pending;
+        return bridge.value!;
+      },
+    });
+
+    await expect(child.resolveAsync(ROOT)).rejects.toMatchObject({
+      code: "CAPTIVE_DEPENDENCY",
+      path: [ROOT, TARGET],
+    });
+    expect(targetCalls).toBe(0);
+    if (!bridgeInstance) throw new Error("Bridge was not constructed.");
+    expect(parent.resolve(BRIDGE)).toBe(bridgeInstance);
+    expect(bridgeInstance.value).toBeUndefined();
+  });
+
   test("validates a shared provider separately under stricter captors", () => {
     const SCOPED = token<object>("SCOPED");
     const SINGLETON = token<{ readonly value: object }>("SINGLETON");

@@ -30,7 +30,6 @@ import {
   RUNTIME_DEPENDENCY_HAS_OWN,
   RUNTIME_DEPENDENCY_RESOLVE,
   RUNTIME_DEPENDENCY_RESOLVE_CHAINED,
-  captorConstraints,
   clearRuntimeDependencyParent,
   consumeRejectedPromise,
   createConstruction,
@@ -42,7 +41,6 @@ import {
   providerPromiseLike,
   recordDynamicDependency,
   resolutionContext,
-  strongerCaptor,
   validateGraph,
   waitForConstruction,
   waitForConstructionStart,
@@ -127,6 +125,7 @@ interface SyncDisposalOperation {
 }
 
 const disposalContext = new AsyncLocalStorage<DisposalExecutionContext>();
+const noLifetimeCaptors: readonly LifetimeCaptor[] = Object.freeze([]);
 
 /** Registration and ownership domain that may inherit from a parent container. */
 export class Container implements Disposable, AsyncDisposable {
@@ -594,18 +593,21 @@ export class Container implements Disposable, AsyncDisposable {
   ): T | undefined {
     assertToken(token);
     this.#assertCanResolve(token);
-    const context = this.#activeContext();
-    this.#assertDynamicLookup(context, token);
+    const context = this.#lookupContext(token);
     recordDynamicDependency(context?.collector, this, token);
-    const captor = strongerCaptor(context?.captor, capturedCaptor);
-    const captors = captorConstraints(context?.captor, capturedCaptor);
+    const captors =
+      context || capturedCaptor
+        ? this.#resolutionCaptors(context, capturedCaptor)
+        : noLifetimeCaptors;
+    const captor =
+      captors.length === 0 ? undefined : this.#effectiveCaptor(captors);
     const session = context?.session ?? createResolutionSession();
-    const ancestry = context?.path ?? [];
+    const ancestry = this.#resolutionAncestry(context, token);
     const locked = this.#beginResolution();
     try {
       if (optional && !this.#lookup(token)) return undefined;
       if (captors.length === 0) {
-        if (!this.#validatedSync.has(token)) {
+        if (ancestry.length > 0 || !this.#validatedSync.has(token)) {
           this.#validateGraph(token, true, false, undefined, ancestry);
         }
       }
@@ -654,15 +656,17 @@ export class Container implements Disposable, AsyncDisposable {
     try {
       assertToken(token);
       this.#assertCanResolve(token);
-      context = this.#activeContext();
-      this.#assertDynamicLookup(context, token);
+      context = this.#lookupContext(token);
+      recordDynamicDependency(context?.collector, this, token);
     } catch (error) {
       return Promise.reject(error);
     }
-
-    recordDynamicDependency(context?.collector, this, token);
-    const captor = strongerCaptor(context?.captor, capturedCaptor);
-    const captors = captorConstraints(context?.captor, capturedCaptor);
+    const captors =
+      context || capturedCaptor
+        ? this.#resolutionCaptors(context, capturedCaptor)
+        : noLifetimeCaptors;
+    const captor =
+      captors.length === 0 ? undefined : this.#effectiveCaptor(captors);
     return this.#trackInFlight(
       this.#resolveAsyncPublic(
         token,
@@ -683,12 +687,12 @@ export class Container implements Disposable, AsyncDisposable {
   ): Promise<T | undefined> {
     const context = this.#activeContext();
     const session = context?.session ?? createResolutionSession();
-    const ancestry = context?.path ?? [];
+    const ancestry = this.#resolutionAncestry(context, token);
     const locked = this.#beginResolution();
     try {
       if (optional && !this.#lookup(token)) return undefined;
       if (captors.length === 0) {
-        if (!this.#validatedAsync.has(token)) {
+        if (ancestry.length > 0 || !this.#validatedAsync.has(token)) {
           this.#validateGraph(token, false, false, undefined, ancestry);
         }
       }
@@ -725,8 +729,7 @@ export class Container implements Disposable, AsyncDisposable {
     assertToken(token);
     this.#assertCanResolve(token);
     const chained = options.chained === true;
-    const context = this.#activeContext();
-    this.#assertDynamicLookup(context, token);
+    const context = this.#lookupContext(token);
     recordDynamicDependency(
       context?.collector,
       this,
@@ -735,17 +738,21 @@ export class Container implements Disposable, AsyncDisposable {
         ? RUNTIME_DEPENDENCY_RESOLVE | RUNTIME_DEPENDENCY_RESOLVE_CHAINED
         : RUNTIME_DEPENDENCY_RESOLVE,
     );
-    const captor = strongerCaptor(context?.captor, capturedCaptor);
-    const captors = captorConstraints(context?.captor, capturedCaptor);
+    const captors =
+      context || capturedCaptor
+        ? this.#resolutionCaptors(context, capturedCaptor)
+        : noLifetimeCaptors;
+    const captor =
+      captors.length === 0 ? undefined : this.#effectiveCaptor(captors);
     const session = context?.session ?? createResolutionSession();
-    const ancestry = context?.path ?? [];
+    const ancestry = this.#resolutionAncestry(context, token);
     const locked = this.#beginResolution();
     try {
       if (captors.length === 0) {
         const validated = chained
           ? this.#validatedChainedAllSync
           : this.#validatedAllSync;
-        if (!validated.has(token)) {
+        if (ancestry.length > 0 || !validated.has(token)) {
           this.#validateGraph(token, true, true, undefined, ancestry, chained);
         }
       } else {
@@ -784,23 +791,25 @@ export class Container implements Disposable, AsyncDisposable {
     try {
       assertToken(token);
       this.#assertCanResolve(token);
-      context = this.#activeContext();
-      this.#assertDynamicLookup(context, token);
+      context = this.#lookupContext(token);
       chained = options.chained === true;
+      recordDynamicDependency(
+        context?.collector,
+        this,
+        token,
+        chained
+          ? RUNTIME_DEPENDENCY_RESOLVE | RUNTIME_DEPENDENCY_RESOLVE_CHAINED
+          : RUNTIME_DEPENDENCY_RESOLVE,
+      );
     } catch (error) {
       return Promise.reject(error);
     }
-
-    recordDynamicDependency(
-      context?.collector,
-      this,
-      token,
-      chained
-        ? RUNTIME_DEPENDENCY_RESOLVE | RUNTIME_DEPENDENCY_RESOLVE_CHAINED
-        : RUNTIME_DEPENDENCY_RESOLVE,
-    );
-    const captor = strongerCaptor(context?.captor, capturedCaptor);
-    const captors = captorConstraints(context?.captor, capturedCaptor);
+    const captors =
+      context || capturedCaptor
+        ? this.#resolutionCaptors(context, capturedCaptor)
+        : noLifetimeCaptors;
+    const captor =
+      captors.length === 0 ? undefined : this.#effectiveCaptor(captors);
     return this.#trackInFlight(
       this.#resolveAllAsyncPublic(
         token,
@@ -821,14 +830,14 @@ export class Container implements Disposable, AsyncDisposable {
   ): Promise<readonly T[]> {
     const context = this.#activeContext();
     const session = context?.session ?? createResolutionSession();
-    const ancestry = context?.path ?? [];
+    const ancestry = this.#resolutionAncestry(context, token);
     const locked = this.#beginResolution();
     try {
       if (captors.length === 0) {
         const validated = chained
           ? this.#validatedChainedAllAsync
           : this.#validatedAllAsync;
-        if (!validated.has(token)) {
+        if (ancestry.length > 0 || !validated.has(token)) {
           this.#validateGraph(token, false, true, undefined, ancestry, chained);
         }
       } else {
@@ -852,14 +861,16 @@ export class Container implements Disposable, AsyncDisposable {
   /** Tests visible or own registration availability without construction. */
   has<T>(token: Token<T>, options: RegistrationQueryOptions = {}): boolean {
     assertToken(token);
-    const context = this.#activeContext();
-    this.#assertDynamicLookup(context, token);
-    if (context?.captor && !this.#isAncestorOf(context.captor.domain)) {
+    const context = this.#lookupContext(token);
+    const captor = this.#causalCaptors(context).find(
+      (candidate) => !this.#isAncestorOf(candidate.domain),
+    );
+    if (captor) {
       throw resolutionError(
         "CAPTIVE_DEPENDENCY",
-        `${tokenName(context.captor.token)} (${context.captor.scope}) cannot ` +
+        `${tokenName(captor.token)} (${captor.scope}) cannot ` +
           `query a descendant container for ${tokenName(token)}.`,
-        [...context.path, token],
+        [...(context?.path ?? []), token],
       );
     }
     recordDynamicDependency(
@@ -882,14 +893,38 @@ export class Container implements Disposable, AsyncDisposable {
     if (options.chained === true && options.all !== true) {
       throw new TypeError("`chained` requires `all: true` in validate().");
     }
-    this.#validateGraph(
+    const context = this.#lookupContext(token);
+    recordDynamicDependency(
+      context?.collector,
+      this,
       token,
-      options.async !== true,
-      options.all === true,
-      this.#activeContext()?.captor,
-      this.#activeContext()?.path ?? [],
-      options.chained === true,
+      options.chained === true
+        ? RUNTIME_DEPENDENCY_RESOLVE | RUNTIME_DEPENDENCY_RESOLVE_CHAINED
+        : RUNTIME_DEPENDENCY_RESOLVE,
     );
+    const captors = this.#causalCaptors(context);
+    const ancestry = this.#resolutionAncestry(context, token);
+    if (captors.length === 0) {
+      this.#validateGraph(
+        token,
+        options.async !== true,
+        options.all === true,
+        undefined,
+        ancestry,
+        options.chained === true,
+      );
+    } else {
+      for (const captor of captors) {
+        this.#validateGraph(
+          token,
+          options.async !== true,
+          options.all === true,
+          captor,
+          ancestry,
+          options.chained === true,
+        );
+      }
+    }
   }
 
   /** Returns a frozen, side-effect-free view of the declared graph. */
@@ -899,6 +934,15 @@ export class Container implements Disposable, AsyncDisposable {
   ): DependencyGraph {
     assertToken(token);
     this.#assertCanResolve(token);
+    const context = this.#lookupContext(token);
+    recordDynamicDependency(
+      context?.collector,
+      this,
+      token,
+      options.chained === true
+        ? RUNTIME_DEPENDENCY_RESOLVE | RUNTIME_DEPENDENCY_RESOLVE_CHAINED
+        : RUNTIME_DEPENDENCY_RESOLVE,
+    );
     return inspectGraph(
       token,
       this,
@@ -1077,8 +1121,146 @@ export class Container implements Disposable, AsyncDisposable {
   }
 
   #activeContext(): ResolutionContext | undefined {
-    const context = resolutionContext.getStore();
-    return context?.active && context.family === this.#family ? context : undefined;
+    return this.#nearestActiveContext(this.#family);
+  }
+
+  #lookupContext(token: AnyToken): ResolutionContext | undefined {
+    const context = this.#nearestActiveContext();
+    this.#assertDynamicLookup(context, token);
+    return context;
+  }
+
+  #nearestActiveContext(
+    family?: ContainerFamily,
+  ): ResolutionContext | undefined {
+    for (
+      let context = resolutionContext.getStore();
+      context;
+      context = context.parent
+    ) {
+      if (
+        context.active &&
+        (family === undefined || context.family === family)
+      ) {
+        return context;
+      }
+    }
+    return undefined;
+  }
+
+  #causalParent(): ResolutionContext | undefined {
+    const current = resolutionContext.getStore();
+    for (let context = current; context; context = context.parent) {
+      if (context.active && context.family === this.#family) {
+        return current?.family === this.#family ? current : context;
+      }
+    }
+    return undefined;
+  }
+
+  #causalCaptors(
+    active: ResolutionContext | undefined,
+  ): readonly LifetimeCaptor[] {
+    if (!active) return noLifetimeCaptors;
+    const captors: LifetimeCaptor[] = [];
+    for (
+      let context = resolutionContext.getStore();
+      context;
+      context = context.parent
+    ) {
+      const captor = context.captor;
+      if (
+        context.family === this.#family &&
+        captor &&
+        !captors.some(
+          (known) =>
+            known.rank === captor.rank && known.domain === captor.domain,
+        )
+      ) {
+        captors.push(captor);
+      }
+      if (context === active) return captors;
+    }
+    return active.captor ? [active.captor] : noLifetimeCaptors;
+  }
+
+  #resolutionCaptors(
+    active: ResolutionContext | undefined,
+    captured: LifetimeCaptor | undefined,
+  ): readonly LifetimeCaptor[] {
+    const causal = this.#causalCaptors(active);
+    if (!captured) return causal;
+    const duplicate = causal.findIndex(
+      (known) =>
+        known.rank === captured.rank && known.domain === captured.domain,
+    );
+    if (duplicate === -1) return [...causal, captured];
+    const combined = [...causal];
+    combined[duplicate] = captured;
+    return combined;
+  }
+
+  #effectiveCaptor(
+    captors: readonly LifetimeCaptor[],
+  ): LifetimeCaptor | undefined {
+    let effective: LifetimeCaptor | undefined;
+    for (const captor of captors) {
+      if (
+        !effective ||
+        captor.rank > effective.rank ||
+        (captor.rank === effective.rank &&
+          captor.domain.#isAncestorOf(effective.domain))
+      ) {
+        effective = captor;
+      }
+    }
+    return effective;
+  }
+
+  #activeConstruction(): Construction | undefined {
+    return this.#activeContext()?.construction;
+  }
+
+  #resolutionAncestry(
+    context: ResolutionContext | undefined,
+    token: AnyToken,
+  ): readonly AnyToken[] {
+    if (!context || !context.path.includes(token)) return context?.path ?? [];
+    const trace = this.#activeTrace();
+    return trace.length === 0 ? context.path : trace;
+  }
+
+  #activeTrace(): readonly AnyToken[] {
+    const chain: ResolutionContext[] = [];
+    let highestActive = -1;
+    for (
+      let context = resolutionContext.getStore();
+      context;
+      context = context.parent
+    ) {
+      chain.push(context);
+      if (context.active) highestActive = chain.length - 1;
+    }
+    if (highestActive === -1) return [];
+
+    let previous: readonly AnyToken[] = [];
+    const trace: AnyToken[] = [];
+    for (let index = highestActive; index >= 0; index -= 1) {
+      const context = chain[index]!;
+      let common = 0;
+      while (
+        common < previous.length &&
+        common < context.path.length &&
+        previous[common] === context.path[common]
+      ) {
+        common += 1;
+      }
+      for (let pathIndex = common; pathIndex < context.path.length; pathIndex += 1) {
+        trace.push(context.path[pathIndex]!);
+      }
+      previous = context.path;
+    }
+    return trace;
   }
 
   #validateGraph(
@@ -1100,7 +1282,7 @@ export class Container implements Disposable, AsyncDisposable {
       : synchronous
         ? this.#validatedSync
         : this.#validatedAsync;
-    const cacheable = initialCaptor === undefined;
+    const cacheable = initialCaptor === undefined && prefix.length === 0;
     if (cacheable && validated.has(root)) return;
     const validatedAsync = synchronous
       ? all
@@ -1360,7 +1542,7 @@ export class Container implements Disposable, AsyncDisposable {
     }
     if (cached?.state === "pending") {
       const waiting = waitForConstruction(
-        this.#activeContext()?.construction,
+        this.#activeConstruction(),
         cached.producer,
         cached.promise,
       );
@@ -1397,7 +1579,7 @@ export class Container implements Disposable, AsyncDisposable {
       captor,
     );
     const construction = createConstruction(token, path);
-    const waitingConstruction = this.#activeContext()?.construction;
+    const waitingConstruction = this.#activeConstruction();
     if (!cache) {
       return waitForConstructionStart(
         waitingConstruction,
@@ -1851,6 +2033,7 @@ export class Container implements Disposable, AsyncDisposable {
     const context: ResolutionContext = {
       container: this,
       family: this.#family,
+      parent: this.#causalParent(),
       path,
       session,
       construction,
@@ -1876,6 +2059,7 @@ export class Container implements Disposable, AsyncDisposable {
     const context: ResolutionContext = {
       container: this,
       family: this.#family,
+      parent: this.#causalParent(),
       path,
       session,
       construction,
@@ -2511,11 +2695,12 @@ export class Container implements Disposable, AsyncDisposable {
     token: AnyToken,
   ): void {
     if (!context || this.#isAncestorOf(context.container)) return;
+    const trace = this.#activeTrace();
     throw resolutionError(
       "CAPTIVE_DEPENDENCY",
       `${tokenName(context.path.at(-1) ?? token)} cannot resolve ` +
-        `${tokenName(token)} through a sibling or descendant container.`,
-      [...context.path, token],
+        `${tokenName(token)} outside its activation-container ancestry.`,
+      [...(trace.length === 0 ? context.path : trace), token],
     );
   }
 

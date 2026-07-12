@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   Container,
   RegistrationError,
+  ResolutionError,
   all,
   lazy,
   optional,
@@ -289,6 +290,45 @@ describe("container mutation", () => {
     expect(container.resolve(MULTI_ROOT)).toBe(multiRoot);
   });
 
+  test("tracks dynamic validation and inspection queries", () => {
+    const VALUE = token<number>("VALUE");
+    const VALIDATED = token<{ readonly available: boolean }>("VALIDATED");
+    const INSPECTED = token<{ readonly available: boolean }>("INSPECTED");
+    const container = new Container();
+    container.register(VALIDATED, {
+      scope: "singleton",
+      useFactory: () => {
+        try {
+          container.validate(VALUE);
+          return { available: true };
+        } catch (error) {
+          if (error instanceof ResolutionError && error.code === "NOT_FOUND") {
+            return { available: false };
+          }
+          throw error;
+        }
+      },
+    });
+    container.register(INSPECTED, {
+      scope: "singleton",
+      useFactory: () => ({
+        available: container.inspect(VALUE).missing.length === 0,
+      }),
+    });
+
+    const validatedBefore = container.resolve(VALIDATED);
+    const inspectedBefore = container.resolve(INSPECTED);
+    expect(validatedBefore.available).toBe(false);
+    expect(inspectedBefore.available).toBe(false);
+
+    container.register(VALUE, { useValue: 1 });
+
+    expect(container.resolve(VALIDATED)).not.toBe(validatedBefore);
+    expect(container.resolve(VALIDATED).available).toBe(true);
+    expect(container.resolve(INSPECTED)).not.toBe(inspectedBefore);
+    expect(container.resolve(INSPECTED).available).toBe(true);
+  });
+
   test("keeps runtime dependency edges isolated per scoped activation", () => {
     const VALUE = token<number>("VALUE");
     const ROOT = token<{ value?: number }>("ROOT");
@@ -423,6 +463,35 @@ describe("container mutation", () => {
     expect(container.resolve(ROOT)).toBe(0);
     container.register(LATE, { useValue: 42 });
     expect(container.resolve(ROOT)).toBe(42);
+  });
+
+  test("propagates attempted async cycle edges when rejection is caught", async () => {
+    const A = token<{ readonly value: number }>("A");
+    const B = token<{ readonly value: number }>("B");
+    const container = new Container();
+    let builds = 0;
+    container.register(A, {
+      scope: "singleton",
+      useFactoryAsync: () => container.resolveAsync(B),
+    });
+    container.register(B, {
+      scope: "singleton",
+      useFactoryAsync: async () => {
+        builds += 1;
+        try {
+          return await container.resolveAsync(A);
+        } catch {
+          return { value: 0 };
+        }
+      },
+    });
+
+    expect((await container.resolveAsync(A)).value).toBe(0);
+    expect(builds).toBe(1);
+    container.rebind(A, { useValue: { value: 42 } });
+
+    expect((await container.resolveAsync(B)).value).toBe(42);
+    expect(builds).toBe(2);
   });
 
   test("shares pending runtime edges with callers that catch rejection", async () => {

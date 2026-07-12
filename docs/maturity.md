@@ -32,6 +32,8 @@ Reference implementations:
 - [x] Sync/async graph separation and concurrent cache coalescing
 - [x] Preflight missing, ambiguity, async, lifetime, and cycle validation
 - [x] Full dynamic dependency paths, stable error codes, cycles, and causes
+- [x] Inactive async-context recovery and independent container-family
+  isolation across resolution, query, validation, and inspection
 - [x] Deterministic sync/async disposal, hierarchy, and ownership
 - [x] Explicit sync/async cleanup adapters for third-party resources
 - [x] Registration inspection, local override, and unregister
@@ -75,7 +77,7 @@ outside the supported package API.
 - [x] Pinned TypeScript 5.4 and current TypeScript source and packed-consumer checks
 - [x] Minimum Bun 1.3.10 and latest Bun jobs
 - [x] Minimum Bun npm-packed sync/async consumer smoke
-- [x] Local Bun 1.3.10 type, 188-test, and packed-consumer verification
+- [x] Local Bun 1.3.10 type, 203-test, and packed-consumer verification
 - [x] Packed tarball install plus isolated NodeNext, Bun, Node, declaration,
   and packaged-document link smoke
 - [x] Release publication lints and consumes the exact tarball passed to npm
@@ -83,6 +85,8 @@ outside the supported package API.
   gates configured
 - [x] Node 22/24/26 runtime matrix configured
 - [x] Node matrix exercises async context, scope, coalescing, paths, and disposal
+- [x] Packed Bun/Node smoke exercises inactive nested context and independent
+  container-family isolation without deadlock
 - [x] Windows packed-consumer job configured
 - [x] Package lint and exported-type resolution checks
 - [x] Scope/disposal ownership and scheduler stress coverage
@@ -117,6 +121,9 @@ job, which exposed a platform command-resolution bug.
 The corrected [second public CI run](https://github.com/pythonstrup/bunject/actions/runs/29176357356)
 passed all eight jobs, including Windows packaging, minimum Bun, Node 22/24/26,
 and Deno 2.0/latest.
+The [workflow-hardening run](https://github.com/pythonstrup/bunject/actions/runs/29180327856)
+also passed all eight jobs after command-level compatibility and action-pin
+checks were tightened.
 The provenance workflow still needs npm trusted-publisher configuration and an
 actual release. Popularity, ecosystem adoption, and battle-testing remain
 external metrics and cannot be claimed from repository tests.

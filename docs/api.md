@@ -362,6 +362,12 @@ Dynamic calls made during activation retain cycle, lifetime,
 ownership, and registry-mutation tracking, including an absent optional edge.
 Deferred lazy and resolver calls re-read the latest registry while retaining
 lifetime and ownership checks.
+Direct container calls made during activation may inspect or resolve only the
+activation container or one of its ancestors in the same root/descendant
+family. A sibling, descendant, or independently created root fails with
+`CAPTIVE_DEPENDENCY` before provider inspection or construction. Once
+activation has completed, a later callback may begin a fresh top-level lookup
+in an independent container.
 
 ### Inspection results
 
@@ -484,8 +490,8 @@ providers, active resolution, or async-only resources.
   inspection request.
 - Singleton activation is registration-owner-affine. Other lifetimes use the
   active resolving container and may see child overrides.
-- Dynamic provider lookup may target the activation container or an ancestor,
-  never a sibling or descendant.
+- Dynamic provider lookup may target the activation container or an ancestor in
+  the same container family, never a sibling, descendant, or independent root.
 - `lazy()` and `resolver()` defer only the chosen edge; they do not bypass
   lifetime, ownership, cycle, or disposed-container checks.
 - Bunject does not create circular proxies. Use an intentional deferred edge
