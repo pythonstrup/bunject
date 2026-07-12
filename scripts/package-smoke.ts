@@ -190,11 +190,13 @@ try {
   );
   await writeFile(
     join(consumerDirectory, "bun-consumer.ts"),
-    `import { Container, Injectable, defineProvider, forwardRef, token } from "bunject";
+    `import { Container, Injectable, defineProvider, forwardRef, token, type DefinedProvider } from "bunject";
 
 const VALUE = token<number>("VALUE");
 const DOUBLE = token<number>("DOUBLE");
 const MISSING = token<number>("MISSING");
+const OBJECT = token<object>("OBJECT");
+const ANY = token<any>("ANY");
 
 @Injectable({
   inject: [VALUE, forwardRef(() => ForwardDependency)],
@@ -209,6 +211,71 @@ class Application {
 
 @Injectable()
 class ForwardDependency {}
+
+class NoDependencies {}
+class LooseThenService { then(): void {} }
+const NO_DEPENDENCIES = token<NoDependencies>("NO_DEPENDENCIES");
+const PROMISE_VALUE = token<Promise<number>>("PROMISE_VALUE");
+interface OverloadedFactory {
+  (value: number): number;
+  (value: number, extra: number): number;
+}
+interface RiskyOverloadedFactory {
+  (value: number): Promise<number>;
+  (value?: number): object;
+}
+interface RiskyOverloadedConstructor {
+  readonly prototype: object;
+  new (value: number): PromiseLike<number>;
+  new (value?: number): object;
+}
+declare const overloadedFactory: OverloadedFactory;
+declare const riskyOverloadedFactory: RiskyOverloadedFactory;
+declare const riskyOverloadedConstructor: RiskyOverloadedConstructor;
+declare const forbiddenDefinedProvider: DefinedProvider<Promise<number>>;
+const widenedValues: readonly (typeof VALUE)[] = [VALUE];
+
+// @ts-expect-error decorator tuples cannot exceed constructor arity
+@Injectable({ inject: [VALUE] })
+class InvalidDecoratedDependencies {}
+
+if (false) {
+  // @ts-expect-error factory tuples cannot exceed callback arity
+  new Container().register(VALUE, { inject: [VALUE], useFactory: () => 1 });
+  // @ts-expect-error class tuples cannot exceed constructor arity
+  new Container().register(NO_DEPENDENCIES, { inject: [VALUE], useClass: NoDependencies });
+  // @ts-expect-error stored tuples cannot exceed callback arity
+  defineProvider<number>()({ inject: [VALUE], useFactory: () => 1 });
+  // @ts-expect-error overloaded factories use their final declared signature
+  new Container().register(DOUBLE, { inject: [VALUE], useFactory: overloadedFactory });
+  new Container().register(DOUBLE, { inject: [VALUE], useFactory: (value) => overloadedFactory(value) });
+  new Container().register(DOUBLE, { inject: widenedValues, useFactory: (...values: number[]) => (values[0] ?? 0) * 2 });
+  defineProvider<number>()({ inject: widenedValues, useFactory: (...values: number[]) => (values[0] ?? 0) * 2 });
+  // @ts-expect-error widened arrays may be empty, so required parameters are unsafe
+  new Container().register(DOUBLE, { inject: widenedValues, useFactory: (value: number) => value * 2 });
+  // @ts-expect-error inferred synchronous providers cannot use async factories
+  defineProvider({ inject: [VALUE], useFactory: async (value) => value * 2 });
+  // @ts-expect-error defined providers cannot bypass Promise service rejection
+  new Container().register(PROMISE_VALUE, forbiddenDefinedProvider);
+  // @ts-expect-error any-typed tokens cannot hide Promise defined providers
+  new Container().register(ANY, forbiddenDefinedProvider);
+  // @ts-expect-error overlapping overloads require a single-signature wrapper
+  new Container().register(OBJECT, { inject: [VALUE], useFactory: riskyOverloadedFactory });
+  // @ts-expect-error inferred overloaded providers cannot misbrand their result
+  defineProvider({ inject: [VALUE], useFactory: riskyOverloadedFactory });
+  // @ts-expect-error structural constructor overloads require an adapter
+  new Container().register(OBJECT, { inject: [VALUE], useClass: riskyOverloadedConstructor });
+  // @ts-expect-error broad tokens still reject actual Promise values
+  new Container().register(OBJECT, { useValue: Promise.resolve({}) });
+  // @ts-expect-error broad tokens still reject actual async sync-factories
+  new Container().register(OBJECT, { useFactory: async () => ({}) });
+  // @ts-expect-error runtime-thenable values are rejected even without PromiseLike's full signature
+  new Container().register(OBJECT, { useValue: new LooseThenService() });
+  // @ts-expect-error runtime-thenable factories are rejected under broad tokens
+  new Container().register(OBJECT, { useFactory: () => new LooseThenService() });
+  // @ts-expect-error explicit builders retain actual async return types
+  defineProvider<object>()({ inject: [], useFactory: async () => ({}) });
+}
 
 const container = new Container();
 container.register(VALUE, { useValue: 42 });

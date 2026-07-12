@@ -54,7 +54,7 @@ describe("stress and generated graphs", () => {
     roots.forEach((root, index) => {
       container.register(root, {
         inject: [SHARED],
-        useFactory: () => ({ index }),
+        useFactory: (_shared) => ({ index }),
       });
     });
 

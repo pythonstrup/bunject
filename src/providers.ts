@@ -14,6 +14,7 @@ import type {
   AsyncFactoryProvider,
   ClassToken,
   ClassProvider,
+  ConstructorDependenciesMatch,
   DefinedProvider,
   Dependency,
   DependencyValues,
@@ -34,7 +35,9 @@ type AnyProvider =
   | ClassProvider<any, readonly AnyDependency[]>
   | MetadataClassProvider<any>
   | ValueProvider<any>
+  | FactoryProvider<any, readonly []>
   | FactoryProvider<any, readonly AnyDependency[]>
+  | AsyncFactoryProvider<any, readonly []>
   | AsyncFactoryProvider<any, readonly AnyDependency[]>
   | ExistingProvider<any>;
 export type AnyProviderInput = AnyProvider | DefinedProvider<any>;
@@ -96,7 +99,7 @@ export function Injectable<
     ...dependencies: DependencyValues<NoInfer<TDependencies>>
   ) => any,
 >(
-  value: TClass,
+  value: TClass & ConstructorDependenciesMatch<TClass, TDependencies>,
   context: ClassDecoratorContext<TClass>,
 ) => void;
 export function Injectable(options?: InjectableOptions): <

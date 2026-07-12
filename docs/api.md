@@ -102,7 +102,7 @@ validation therefore expose only the resulting ordinary dependency edge.
 | --- | --- |
 | `Constructor<T>` | A concrete constructor for `T`. |
 | `InjectableClass<T>` | A concrete constructor with an optional static `inject` tuple. |
-| `NonPromise<T>` | Excludes `PromiseLike` service values. |
+| `NonPromise<T>` | Excludes runtime thenables with a callable `.then`. |
 | `TokenValue<TToken>` | Gets the service type carried by a token. |
 | `DependencyValue<TDependency>` | Gets the injected type for one token or descriptor. |
 | `DependencyValues<TDependencies>` | Maps an injection tuple to a mutable constructor/factory parameter tuple. |
@@ -158,6 +158,16 @@ decorator scope. Decorator scope metadata may be inherited, but decorator
 dependency tuples are not: a subclass with constructor parameters must
 redeclare them.
 
+For tuple literals, the injected values must form a valid invocation of the
+constructor or factory: both parameter types and arity are checked. Optional,
+defaulted, and rest parameters accept every arity allowed by the TypeScript call
+signature. Overloaded callable values cannot safely preserve argument-to-result
+pairing through a generic DI boundary, so wrap them in a monomorphic arrow or
+adapter class before registration. Generic single-signature factories remain
+supported. A widened dependency array has no fixed arity and therefore requires
+a compatible homogeneous rest signature. Prefer an inline tuple or `as const`
+when exact arity matters.
+
 ## Providers
 
 `Provider<T>` is the union of five provider forms:
@@ -165,7 +175,7 @@ redeclare them.
 | Type | Required key | Dependency declaration | Ownership |
 | --- | --- | --- | --- |
 | `ClassProvider<T, D>` | `useClass` | Provider `inject`, decorator metadata, or static `inject` | Created value is owned when it has a disposal protocol or provider disposal hook. |
-| `ValueProvider<T>` | `useValue` | None | Borrowed; never disposed by Bunject. Promise-like values are rejected. |
+| `ValueProvider<T>` | `useValue` | None | Borrowed; never disposed by Bunject. Runtime thenables are rejected. |
 | `FactoryProvider<T, D>` | `useFactory` | Optional `inject`, default `[]` | Returned value follows class/factory ownership rules. A Promise result is rejected by sync resolution. |
 | `AsyncFactoryProvider<T, D>` | `useFactoryAsync` | Optional `inject`, default `[]` | Returned value follows class/factory ownership rules and requires async resolution. |
 | `ExistingProvider<T>` | `useExisting` | Alias target | Borrowed alias retaining the target identity and lifetime. |

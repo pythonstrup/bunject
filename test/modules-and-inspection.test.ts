@@ -107,7 +107,7 @@ describe("graph inspection", () => {
     container.registerMulti(MANY, { useValue: 3 });
     container.register(ROOT, {
       inject: [REQUIRED, optional(OPTIONAL), all(MANY), lazy(DEFERRED)],
-      useFactory: () => {
+      useFactory: (_required, _optional, _many, _deferred) => {
         constructions += 1;
         return {};
       },

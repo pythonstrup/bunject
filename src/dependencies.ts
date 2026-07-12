@@ -6,11 +6,12 @@ import type {
   AllDependency,
   AnyDependency,
   AnyToken,
-  AsyncFactoryProvider,
-  ClassProvider,
+  CheckedAsyncFactoryProvider,
+  CheckedClassProvider,
+  CheckedFactoryProvider,
   Defined,
   DependencyTuple,
-  FactoryProvider,
+  DependencyValues,
   ForwardRefDependency,
   ForwardRefTarget,
   InjectableClass,
@@ -18,6 +19,7 @@ import type {
   LazyDependency,
   MultiResolutionOptions,
   NormalizedDependency,
+  NonPromise,
   OptionalDependency,
   ProviderBuilder,
   ProviderWithInject,
@@ -90,34 +92,64 @@ export function resolver(): ResolverDependency {
  * interface or other service type explicitly.
  */
 export function defineProvider<
-  T,
   const TDependencies extends DependencyTuple,
->(
-  provider: ProviderWithInject<ClassProvider<T, TDependencies>, TDependencies>,
-): Defined<
-  ProviderWithInject<ClassProvider<T, TDependencies>, TDependencies>,
-  T
->;
-export function defineProvider<
-  T,
-  const TDependencies extends DependencyTuple,
->(
-  provider: ProviderWithInject<FactoryProvider<T, TDependencies>, TDependencies>,
-): Defined<
-  ProviderWithInject<FactoryProvider<T, TDependencies>, TDependencies>,
-  T
->;
-export function defineProvider<
-  T,
-  const TDependencies extends DependencyTuple,
+  const TClass extends InjectableClass<any> &
+    (new (...dependencies: DependencyValues<TDependencies>) => any),
 >(
   provider: ProviderWithInject<
-    AsyncFactoryProvider<T, TDependencies>,
+    CheckedClassProvider<InstanceType<TClass>, TDependencies, TClass>,
+    TDependencies
+  > &
+    ([InstanceType<TClass>] extends [NonPromise<InstanceType<TClass>>]
+      ? unknown
+      : never),
+): Defined<
+  ProviderWithInject<
+    CheckedClassProvider<InstanceType<TClass>, TDependencies, TClass>,
+    TDependencies
+  >,
+  InstanceType<TClass>
+>;
+export function defineProvider<
+  const TDependencies extends DependencyTuple,
+  const TFactory extends (
+    ...dependencies: DependencyValues<TDependencies>
+  ) => any,
+>(
+  provider: ProviderWithInject<
+    CheckedFactoryProvider<ReturnType<TFactory>, TDependencies, TFactory>,
+    TDependencies
+  > &
+    ([ReturnType<TFactory>] extends [NonPromise<ReturnType<TFactory>>]
+      ? unknown
+      : never),
+): Defined<
+  ProviderWithInject<
+    CheckedFactoryProvider<ReturnType<TFactory>, TDependencies, TFactory>,
+    TDependencies
+  >,
+  ReturnType<TFactory>
+>;
+export function defineProvider<
+  const TDependencies extends DependencyTuple,
+  const TFactory extends (
+    ...dependencies: DependencyValues<TDependencies>
+  ) => PromiseLike<any>,
+>(
+  provider: ProviderWithInject<
+    CheckedAsyncFactoryProvider<Awaited<ReturnType<TFactory>>, TDependencies, TFactory>,
     TDependencies
   >,
 ): Defined<
-  ProviderWithInject<AsyncFactoryProvider<T, TDependencies>, TDependencies>,
-  T
+  ProviderWithInject<
+    CheckedAsyncFactoryProvider<
+      Awaited<ReturnType<TFactory>>,
+      TDependencies,
+      TFactory
+    >,
+    TDependencies
+  >,
+  Awaited<ReturnType<TFactory>>
 >;
 export function defineProvider<T>(): ProviderBuilder<T>;
 export function defineProvider(provider?: unknown): unknown {

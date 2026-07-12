@@ -25,8 +25,15 @@ export type InjectionToken<T> = symbol & {
 /** Class or typed-symbol identity for a service. */
 export type Token<T> = ClassToken<T> | InjectionToken<T>;
 
-/** Excludes Promise-like service values from synchronous provider contracts. */
-export type NonPromise<T> = T extends PromiseLike<unknown> ? never : T;
+/** Excludes every runtime-thenable service from synchronous provider contracts. */
+export type NonPromise<T> = T extends {
+  then: (...arguments_: any[]) => unknown;
+}
+  ? never
+  : T;
+
+/** Rejects declarations whose actual value type contains a Promise-like branch. */
+export type NonPromiseMatch<T> = [T] extends [NonPromise<T>] ? unknown : never;
 
 /** Extracts the service type carried by a token. */
 export type TokenValue<TToken extends Token<any>> =
@@ -153,40 +160,179 @@ export type InjectableClass<T = unknown> = Constructor<T> & {
   readonly inject?: readonly Dependency<any>[];
 };
 
+type DependencyParametersMatch<
+  TDependencies extends readonly Dependency<any>[],
+  TParameters extends readonly unknown[],
+> = number extends TDependencies["length"]
+  ? number extends TParameters["length"]
+    ? DependencyValues<TDependencies> extends TParameters
+      ? unknown
+      : never
+    : never
+  : DependencyValues<TDependencies> extends TParameters
+    ? unknown
+    : never;
+
+// ponytail: TypeScript exposes overload sets only through finite inference.
+// Twelve covers practical constructor APIs; use an adapter for overloaded input.
+type ConstructorSignatureSets<TClass> = TClass extends {
+  new (...dependencies: infer T1): infer R1;
+  new (...dependencies: infer T2): infer R2;
+  new (...dependencies: infer T3): infer R3;
+  new (...dependencies: infer T4): infer R4;
+  new (...dependencies: infer T5): infer R5;
+  new (...dependencies: infer T6): infer R6;
+  new (...dependencies: infer T7): infer R7;
+  new (...dependencies: infer T8): infer R8;
+  new (...dependencies: infer T9): infer R9;
+  new (...dependencies: infer T10): infer R10;
+  new (...dependencies: infer T11): infer R11;
+  new (...dependencies: infer T12): infer R12;
+}
+  ? | [T1, R1]
+    | [T2, R2]
+    | [T3, R3]
+    | [T4, R4]
+    | [T5, R5]
+    | [T6, R6]
+    | [T7, R7]
+    | [T8, R8]
+    | [T9, R9]
+    | [T10, R10]
+    | [T11, R11]
+    | [T12, R12]
+  : never;
+
+type FactorySignatureSets<TFactory> = TFactory extends {
+  (...dependencies: infer T1): infer R1;
+  (...dependencies: infer T2): infer R2;
+  (...dependencies: infer T3): infer R3;
+  (...dependencies: infer T4): infer R4;
+  (...dependencies: infer T5): infer R5;
+  (...dependencies: infer T6): infer R6;
+  (...dependencies: infer T7): infer R7;
+  (...dependencies: infer T8): infer R8;
+  (...dependencies: infer T9): infer R9;
+  (...dependencies: infer T10): infer R10;
+  (...dependencies: infer T11): infer R11;
+  (...dependencies: infer T12): infer R12;
+}
+  ? | [T1, R1]
+    | [T2, R2]
+    | [T3, R3]
+    | [T4, R4]
+    | [T5, R5]
+    | [T6, R6]
+    | [T7, R7]
+    | [T8, R8]
+    | [T9, R9]
+    | [T10, R10]
+    | [T11, R11]
+    | [T12, R12]
+  : never;
+
+type TypeEqual<TLeft, TRight> = (<T>() => T extends TLeft ? 1 : 2) extends <
+  T,
+>() => T extends TRight ? 1 : 2
+  ? (<T>() => T extends TRight ? 1 : 2) extends <T>() =>
+        T extends TLeft ? 1 : 2
+    ? true
+    : false
+  : false;
+
+type SignatureMatches<TSignatures, TExpected> = TSignatures extends unknown
+  ? TypeEqual<TSignatures, TExpected>
+  : never;
+
+type ConstructorSignatureMatch<TClass extends ClassToken<any>> = false extends
+  SignatureMatches<
+    ConstructorSignatureSets<TClass>,
+    [ConstructorParameters<TClass>, InstanceType<TClass>]
+  >
+  ? never
+  : unknown;
+
+type FactorySignatureMatch<
+  TFactory extends (...dependencies: any[]) => unknown,
+> = false extends SignatureMatches<
+  FactorySignatureSets<TFactory>,
+  [Parameters<TFactory>, ReturnType<TFactory>]
+>
+  ? never
+  : unknown;
+
+export type ConstructorDependenciesMatch<
+  TClass extends ClassToken<any>,
+  TDependencies extends readonly Dependency<any>[],
+> = DependencyParametersMatch<
+  TDependencies,
+  ConstructorParameters<TClass>
+> &
+  ConstructorSignatureMatch<TClass>;
+
+export type FactoryDependenciesMatch<
+  TFactory extends (...dependencies: any[]) => unknown,
+  TDependencies extends readonly Dependency<any>[],
+> = DependencyParametersMatch<TDependencies, Parameters<TFactory>> &
+  FactorySignatureMatch<TFactory>;
+
 export type StaticInjectMatchesConstructor<TClass extends ClassToken<any>> =
   TClass extends {
     readonly inject: infer TDependencies extends readonly Dependency<any>[];
   }
-    ? TClass extends abstract new (
-          ...dependencies: DependencyValues<TDependencies>
-        ) => any
-      ? unknown
-      : never
-    : unknown;
+    ? ConstructorDependenciesMatch<TClass, TDependencies>
+    : ConstructorSignatureMatch<TClass>;
 
 export type InjectableDeclarationMatchesConstructor<
   TClass extends ClassToken<any>,
 > = TClass extends { readonly inject: readonly Dependency<any>[] }
   ? StaticInjectMatchesConstructor<TClass>
-  : ConstructorParameters<TClass> extends readonly []
-    ? unknown
-    : never;
+  : ConstructorDependenciesMatch<TClass, readonly []>;
 
-export type ProviderMatchesDeclaration<TProvider> =
-  TProvider extends {
+export type ProviderMatchesDeclaration<TProvider> = TProvider extends {
+  readonly useValue: infer TValue;
+}
+  ? NonPromiseMatch<TValue>
+  : TProvider extends {
     readonly useClass: infer TClass extends InjectableClass<any>;
     readonly inject: infer TDependencies extends readonly Dependency<any>[];
   }
-    ? TClass extends new (
-          ...dependencies: DependencyValues<TDependencies>
-        ) => any
-      ? unknown
-      : never
+    ? ConstructorDependenciesMatch<TClass, TDependencies> &
+        NonPromiseMatch<InstanceType<TClass>>
     : TProvider extends {
-          readonly useClass: infer TClass extends InjectableClass<any>;
+          readonly useFactory: infer TFactory extends (
+            ...dependencies: any[]
+          ) => unknown;
+          readonly inject: infer TDependencies extends readonly Dependency<any>[];
         }
-      ? StaticInjectMatchesConstructor<TClass>
-      : unknown;
+      ? FactoryDependenciesMatch<TFactory, TDependencies> &
+          NonPromiseMatch<ReturnType<TFactory>>
+      : TProvider extends {
+            readonly useFactory: infer TFactory extends (
+              ...dependencies: any[]
+            ) => unknown;
+          }
+        ? FactoryDependenciesMatch<TFactory, readonly []> &
+            NonPromiseMatch<ReturnType<TFactory>>
+        : TProvider extends {
+            readonly useFactoryAsync: infer TFactory extends (
+              ...dependencies: any[]
+            ) => unknown;
+            readonly inject: infer TDependencies extends readonly Dependency<any>[];
+          }
+          ? FactoryDependenciesMatch<TFactory, TDependencies>
+          : TProvider extends {
+                readonly useFactoryAsync: infer TFactory extends (
+                  ...dependencies: any[]
+                ) => unknown;
+              }
+            ? FactoryDependenciesMatch<TFactory, readonly []>
+            : TProvider extends {
+                  readonly useClass: infer TClass extends InjectableClass<any>;
+                }
+              ? StaticInjectMatchesConstructor<TClass> &
+                  NonPromiseMatch<InstanceType<TClass>>
+              : unknown;
 
 /** Scope-only `@Injectable()` options without a decorator dependency tuple. */
 export interface InjectableOptions {
@@ -303,7 +449,9 @@ export interface DependencyGraph {
 export interface RegistrationRegistry {
   /** Adds one staged single binding and returns this registry. */
   register<const TClass extends InjectableClass<any>>(
-    service: TClass & StaticInjectMatchesConstructor<NoInfer<TClass>>,
+    service: TClass &
+      StaticInjectMatchesConstructor<NoInfer<TClass>> &
+      NonPromiseMatch<InstanceType<TClass>>,
   ): this;
   register<T, const TClass extends InjectableClass<NonPromise<T>>>(
     token: Token<T>,
@@ -311,28 +459,64 @@ export interface RegistrationRegistry {
   ): this;
   register<
     T,
-    const TDependencies extends readonly Dependency<any>[],
+    const TDependencies extends DependencyTuple,
+    const TClass extends InjectableClass<NonPromise<NoInfer<T>>> &
+      (new (
+        ...dependencies: DependencyValues<TDependencies>
+      ) => NonPromise<NoInfer<T>>),
   >(
     token: Token<T>,
-    provider: ClassProvider<NoInfer<T>, TDependencies>,
+    provider: ProviderWithInject<
+      CheckedClassProvider<NoInfer<T>, TDependencies, TClass>,
+      TDependencies
+    >,
   ): this;
-  register<T>(token: Token<T>, provider: ValueProvider<NoInfer<T>>): this;
+  register<T, const TValue extends T>(
+    token: Token<T>,
+    provider: CheckedValueProvider<NoInfer<T>, TValue>,
+  ): this;
   register<T>(token: Token<T>, provider: ExistingProvider<NoInfer<T>>): this;
   register<
     T,
-    const TDependencies extends readonly Dependency<any>[],
+    const TFactory extends () => NonPromise<NoInfer<T>>,
   >(
     token: Token<T>,
-    provider: FactoryProvider<NoInfer<T>, TDependencies>,
+    provider: CheckedFactoryProvider<NoInfer<T>, readonly [], TFactory>,
   ): this;
   register<
     T,
-    const TDependencies extends readonly Dependency<any>[],
+    const TDependencies extends DependencyTuple,
+    const TFactory extends (
+      ...dependencies: DependencyValues<TDependencies>
+    ) => NonPromise<NoInfer<T>>,
   >(
     token: Token<T>,
-    provider: AsyncFactoryProvider<NoInfer<T>, TDependencies>,
+    provider: ProviderWithInject<
+      CheckedFactoryProvider<NoInfer<T>, TDependencies, TFactory>,
+      TDependencies
+    >,
   ): this;
-  register<T>(token: Token<T>, provider: DefinedProvider<NoInfer<T>>): this;
+  register<T>(
+    token: Token<T>,
+    provider: AsyncFactoryProvider<NoInfer<T>, readonly []>,
+  ): this;
+  register<
+    T,
+    const TDependencies extends DependencyTuple,
+    const TFactory extends (
+      ...dependencies: DependencyValues<TDependencies>
+    ) => PromiseLike<NonPromise<NoInfer<T>>>,
+  >(
+    token: Token<T>,
+    provider: ProviderWithInject<
+      CheckedAsyncFactoryProvider<NoInfer<T>, TDependencies, TFactory>,
+      TDependencies
+    >,
+  ): this;
+  register<T, TDefined extends T>(
+    token: Token<T>,
+    provider: DefinedProvider<TDefined> & NonPromiseMatch<TDefined>,
+  ): this;
   register<T, const TProvider extends Provider<NoInfer<T>>>(
     token: Token<T>,
     provider: TProvider & ProviderMatchesDeclaration<NoInfer<TProvider>>,
@@ -345,30 +529,63 @@ export interface RegistrationRegistry {
   ): this;
   registerMulti<
     T,
-    const TDependencies extends readonly Dependency<any>[],
+    const TDependencies extends DependencyTuple,
+    const TClass extends InjectableClass<NonPromise<NoInfer<T>>> &
+      (new (
+        ...dependencies: DependencyValues<TDependencies>
+      ) => NonPromise<NoInfer<T>>),
   >(
     token: Token<T>,
-    provider: ClassProvider<NoInfer<T>, TDependencies>,
+    provider: ProviderWithInject<
+      CheckedClassProvider<NoInfer<T>, TDependencies, TClass>,
+      TDependencies
+    >,
   ): this;
-  registerMulti<T>(token: Token<T>, provider: ValueProvider<NoInfer<T>>): this;
+  registerMulti<T, const TValue extends T>(
+    token: Token<T>,
+    provider: CheckedValueProvider<NoInfer<T>, TValue>,
+  ): this;
   registerMulti<T>(token: Token<T>, provider: ExistingProvider<NoInfer<T>>): this;
   registerMulti<
     T,
-    const TDependencies extends readonly Dependency<any>[],
+    const TFactory extends () => NonPromise<NoInfer<T>>,
   >(
     token: Token<T>,
-    provider: FactoryProvider<NoInfer<T>, TDependencies>,
+    provider: CheckedFactoryProvider<NoInfer<T>, readonly [], TFactory>,
   ): this;
   registerMulti<
     T,
-    const TDependencies extends readonly Dependency<any>[],
+    const TDependencies extends DependencyTuple,
+    const TFactory extends (
+      ...dependencies: DependencyValues<TDependencies>
+    ) => NonPromise<NoInfer<T>>,
   >(
     token: Token<T>,
-    provider: AsyncFactoryProvider<NoInfer<T>, TDependencies>,
+    provider: ProviderWithInject<
+      CheckedFactoryProvider<NoInfer<T>, TDependencies, TFactory>,
+      TDependencies
+    >,
   ): this;
   registerMulti<T>(
     token: Token<T>,
-    provider: DefinedProvider<NoInfer<T>>,
+    provider: AsyncFactoryProvider<NoInfer<T>, readonly []>,
+  ): this;
+  registerMulti<
+    T,
+    const TDependencies extends DependencyTuple,
+    const TFactory extends (
+      ...dependencies: DependencyValues<TDependencies>
+    ) => PromiseLike<NonPromise<NoInfer<T>>>,
+  >(
+    token: Token<T>,
+    provider: ProviderWithInject<
+      CheckedAsyncFactoryProvider<NoInfer<T>, TDependencies, TFactory>,
+      TDependencies
+    >,
+  ): this;
+  registerMulti<T, TDefined extends T>(
+    token: Token<T>,
+    provider: DefinedProvider<TDefined> & NonPromiseMatch<TDefined>,
   ): this;
   registerMulti<T, const TProvider extends Provider<NoInfer<T>>>(
     token: Token<T>,
@@ -409,7 +626,8 @@ export type MetadataClassProvider<
   >,
 > = Omit<ClassProvider<T, readonly []>, "useClass" | "inject"> & {
   readonly useClass: TClass &
-    StaticInjectMatchesConstructor<NoInfer<TClass>>;
+    StaticInjectMatchesConstructor<NoInfer<TClass>> &
+    NonPromiseMatch<InstanceType<TClass>>;
   readonly inject?: never;
 };
 
@@ -493,9 +711,7 @@ export interface DefinedProvider<T> {
   readonly [definedProviderType]: (value: T) => T;
 }
 
-export type DependencyTuple =
-  | readonly []
-  | readonly [Dependency<any>, ...Dependency<any>[]];
+export type DependencyTuple = readonly Dependency<any>[];
 
 export type ProviderWithInject<
   TProvider,
@@ -504,26 +720,90 @@ export type ProviderWithInject<
 
 export type Defined<TProvider, T> = TProvider & DefinedProvider<T>;
 
+export type CheckedValueProvider<T, TValue extends T> = Omit<
+  ValueProvider<T>,
+  "useValue"
+> & {
+  readonly useValue: TValue;
+} & NonPromiseMatch<TValue>;
+
+export type CheckedClassProvider<
+  T,
+  TDependencies extends readonly Dependency<any>[],
+  TClass extends InjectableClass<NonPromise<T>>,
+> = Omit<ClassProvider<T, TDependencies>, "useClass"> & {
+  readonly useClass: TClass;
+} & ConstructorDependenciesMatch<TClass, TDependencies> &
+  NonPromiseMatch<InstanceType<TClass>>;
+
+export type CheckedFactoryProvider<
+  T,
+  TDependencies extends readonly Dependency<any>[],
+  TFactory extends (...dependencies: any[]) => NonPromise<T>,
+> = Omit<FactoryProvider<T, TDependencies>, "useFactory"> & {
+  readonly useFactory: TFactory;
+} & FactoryDependenciesMatch<TFactory, TDependencies> &
+  NonPromiseMatch<ReturnType<TFactory>>;
+
+export type CheckedAsyncFactoryProvider<
+  T,
+  TDependencies extends readonly Dependency<any>[],
+  TFactory extends (...dependencies: any[]) => PromiseLike<NonPromise<T>>,
+> = Omit<AsyncFactoryProvider<T, TDependencies>, "useFactoryAsync"> & {
+  readonly useFactoryAsync: TFactory;
+} & FactoryDependenciesMatch<TFactory, TDependencies>;
+
 export interface ProviderBuilder<T> {
-  <const TDependencies extends DependencyTuple>(
-    provider: ProviderWithInject<ClassProvider<T, TDependencies>, TDependencies>,
-  ): Defined<
-    ProviderWithInject<ClassProvider<T, TDependencies>, TDependencies>,
-    T
-  >;
-  <const TDependencies extends DependencyTuple>(
-    provider: ProviderWithInject<FactoryProvider<T, TDependencies>, TDependencies>,
-  ): Defined<
-    ProviderWithInject<FactoryProvider<T, TDependencies>, TDependencies>,
-    T
-  >;
-  <const TDependencies extends DependencyTuple>(
+  <
+    const TDependencies extends DependencyTuple,
+    const TClass extends InjectableClass<NonPromise<T>> &
+      (new (
+        ...dependencies: DependencyValues<TDependencies>
+      ) => NonPromise<T>),
+  >(
     provider: ProviderWithInject<
-      AsyncFactoryProvider<T, TDependencies>,
+      CheckedClassProvider<T, TDependencies, TClass>,
       TDependencies
     >,
   ): Defined<
-    ProviderWithInject<AsyncFactoryProvider<T, TDependencies>, TDependencies>,
+    ProviderWithInject<
+      CheckedClassProvider<T, TDependencies, TClass>,
+      TDependencies
+    >,
+    T
+  >;
+  <
+    const TDependencies extends DependencyTuple,
+    const TFactory extends (
+      ...dependencies: DependencyValues<TDependencies>
+    ) => NonPromise<T>,
+  >(
+    provider: ProviderWithInject<
+      CheckedFactoryProvider<T, TDependencies, TFactory>,
+      TDependencies
+    >,
+  ): Defined<
+    ProviderWithInject<
+      CheckedFactoryProvider<T, TDependencies, TFactory>,
+      TDependencies
+    >,
+    T
+  >;
+  <
+    const TDependencies extends DependencyTuple,
+    const TFactory extends (
+      ...dependencies: DependencyValues<TDependencies>
+    ) => PromiseLike<NonPromise<T>>,
+  >(
+    provider: ProviderWithInject<
+      CheckedAsyncFactoryProvider<T, TDependencies, TFactory>,
+      TDependencies
+    >,
+  ): Defined<
+    ProviderWithInject<
+      CheckedAsyncFactoryProvider<T, TDependencies, TFactory>,
+      TDependencies
+    >,
     T
   >;
 }

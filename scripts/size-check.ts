@@ -7,7 +7,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist");
 const budgets = [
   { extension: ".js", label: "dist/**/*.js", gzipBytes: 17 * 1024 },
-  { extension: ".d.ts", label: "dist/**/*.d.ts", gzipBytes: 6 * 1024 },
+  { extension: ".d.ts", label: "dist/**/*.d.ts", gzipBytes: 7 * 1024 },
 ] as const;
 
 function filesWith(extension: string): string[] {

@@ -332,7 +332,7 @@ describe("dependency descriptors", () => {
             throw cause;
           }),
         ],
-        useFactory: () => ({}),
+        useFactory: (_dependency: any) => ({}),
       });
       throw new Error("Expected registration to fail");
     } catch (error) {
@@ -346,14 +346,14 @@ describe("dependency descriptors", () => {
     expect(() =>
       container.register(ROOT, {
         inject: [forwardRef(() => undefined as never)],
-        useFactory: () => ({}),
+        useFactory: (_dependency: any) => ({}),
       }),
     ).toThrow(expect.objectContaining({ code: "INVALID_TOKEN", token: ROOT }));
 
     expect(() =>
       container.register(ROOT, {
         inject: [forwardRef(() => forwardRef(() => ROOT) as any)],
-        useFactory: () => ({}),
+        useFactory: (_dependency: any) => ({}),
       }),
     ).toThrow(expect.objectContaining({ code: "INVALID_TOKEN", token: ROOT }));
 

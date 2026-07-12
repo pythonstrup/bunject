@@ -116,6 +116,31 @@ class DecoratedNeedsDatabase {
   constructor(readonly database: Database) {}
 }
 
+// @ts-expect-error decorator dependency tuples cannot exceed constructor arity
+@Injectable({ inject: [DATABASE] })
+class DecoratedSurplusDependency {}
+void DecoratedSurplusDependency;
+
+class StaticSurplusDependency {
+  static inject = [DATABASE] as const;
+}
+
+class OptionalConstructor {
+  constructor(readonly database?: Database) {}
+}
+
+@Injectable()
+class DefaultConstructor {
+  constructor(readonly database = new Database()) {}
+}
+
+@Injectable()
+class RestConstructor {
+  constructor(...databases: Database[]) {
+    void databases;
+  }
+}
+
 const DECORATED_NEEDS_DATABASE = token<DecoratedNeedsDatabase>(
   "DECORATED_NEEDS_DATABASE",
 );
@@ -137,10 +162,70 @@ container.registerMulti(NEEDS_DATABASE, {
 });
 // @ts-expect-error rebind metadata class providers validate static inject
 container.rebind(NEEDS_DATABASE, { useClass: StaticDependenciesMismatch });
+// @ts-expect-error static dependency tuples cannot exceed constructor arity
+container.register(StaticSurplusDependency);
 
 container.register(NEEDS_DATABASE, {
   inject: [DATABASE],
   useClass: NeedsDatabase,
+});
+
+const OPTIONAL_CONSTRUCTOR = token<OptionalConstructor>("OPTIONAL_CONSTRUCTOR");
+container.register(OPTIONAL_CONSTRUCTOR, {
+  inject: [],
+  useClass: OptionalConstructor,
+});
+container.registerMulti(OPTIONAL_CONSTRUCTOR, {
+  inject: [DATABASE],
+  useClass: OptionalConstructor,
+});
+container.register(DefaultConstructor);
+container.register(RestConstructor);
+
+const SURPLUS = token<StaticSurplusDependency>("SURPLUS");
+container.register(SURPLUS, { useValue: new StaticSurplusDependency() });
+// @ts-expect-error explicit class tuples cannot exceed constructor arity
+container.register(SURPLUS, {
+  inject: [DATABASE],
+  useClass: StaticSurplusDependency,
+});
+// @ts-expect-error multi class tuples cannot exceed constructor arity
+container.registerMulti(SURPLUS, {
+  inject: [DATABASE],
+  useClass: StaticSurplusDependency,
+});
+// @ts-expect-error rebound class tuples cannot exceed constructor arity
+container.rebind(SURPLUS, {
+  inject: [DATABASE],
+  useClass: StaticSurplusDependency,
+});
+// @ts-expect-error factory tuples cannot exceed callback arity
+container.register(SURPLUS, {
+  inject: [DATABASE],
+  useFactory: () => new StaticSurplusDependency(),
+});
+// @ts-expect-error multi factory tuples cannot exceed callback arity
+container.registerMulti(SURPLUS, {
+  inject: [DATABASE],
+  useFactory: () => new StaticSurplusDependency(),
+});
+// @ts-expect-error rebound async tuples cannot exceed callback arity
+container.rebind(SURPLUS, {
+  inject: [DATABASE],
+  useFactoryAsync: async () => new StaticSurplusDependency(),
+});
+
+container.register(SURPLUS, {
+  inject: [],
+  useFactory: (_database?: Database) => new StaticSurplusDependency(),
+});
+container.registerMulti(SURPLUS, {
+  inject: [DATABASE],
+  useFactory: (_database?: Database) => new StaticSurplusDependency(),
+});
+container.registerMulti(SURPLUS, {
+  inject: [DATABASE, DATABASE],
+  useFactory: (..._databases: Database[]) => new StaticSurplusDependency(),
 });
 
 const reusableFactory = defineProvider<NeedsDatabase>()({
@@ -159,6 +244,12 @@ const reusableClass = defineProvider<NeedsDatabase>()({
   inject: [DATABASE],
   useClass: NeedsDatabase,
 });
+// @ts-expect-error stored factory tuples cannot exceed callback arity
+defineProvider<NeedsDatabase>()({ inject: [DATABASE], useFactory: () => new NeedsDatabase(new Database()) });
+// @ts-expect-error stored async tuples cannot exceed callback arity
+defineProvider<NeedsDatabase>()({ inject: [DATABASE], useFactoryAsync: async () => new NeedsDatabase(new Database()) });
+// @ts-expect-error stored class tuples cannot exceed constructor arity
+defineProvider<StaticSurplusDependency>()({ inject: [DATABASE], useClass: StaticSurplusDependency });
 const reusableFactoryResult: NeedsDatabase = reusableFactory.useFactory(
   new Database(),
   undefined,
@@ -172,6 +263,19 @@ container.registerMulti(NEEDS_DATABASE, storedProvider);
 container.rebind(NEEDS_DATABASE, storedProvider);
 container.register(NEEDS_DATABASE, reusableAsync);
 container.registerMulti(NEEDS_DATABASE, reusableClass);
+const MAYBE_NEEDS_DATABASE = token<
+  NeedsDatabase | Promise<NeedsDatabase>
+>("MAYBE_NEEDS_DATABASE");
+container.register(MAYBE_NEEDS_DATABASE, storedProvider);
+declare const unsafeMaybeDefined: DefinedProvider<
+  NeedsDatabase | Promise<NeedsDatabase>
+>;
+// @ts-expect-error reusable providers cannot retain a Promise-like union branch
+container.register(MAYBE_NEEDS_DATABASE, unsafeMaybeDefined);
+const ANY_SERVICE = token<any>("ANY_SERVICE");
+declare const unsafePromiseDefined: DefinedProvider<Promise<NeedsDatabase>>;
+// @ts-expect-error any-typed tokens cannot hide a Promise-like defined provider
+container.register(ANY_SERVICE, unsafePromiseDefined);
 
 const inferredProvider = defineProvider({
   inject: [DATABASE],
@@ -184,6 +288,207 @@ const inferredStored: DefinedProvider<NeedsDatabase> = inferredProvider;
 const inferredResult: NeedsDatabase = inferredProvider.useFactory(new Database());
 void inferredStored;
 void inferredResult;
+
+interface OverloadedFactory {
+  (database: Database): NeedsDatabase;
+  (database: Database, cache: Cache): NeedsDatabase;
+}
+declare const overloadedFactory: OverloadedFactory;
+container.register(NEEDS_DATABASE, {
+  inject: [DATABASE],
+  // @ts-expect-error overloaded factories use their final declared signature
+  useFactory: overloadedFactory,
+});
+container.registerMulti(NEEDS_DATABASE, {
+  inject: [DATABASE, CACHE],
+  useFactory: (database, cache) => overloadedFactory(database, cache),
+});
+defineProvider({
+  inject: [DATABASE],
+  useFactory: (database) => overloadedFactory(database),
+});
+function identityFactory<T>(value: T): T {
+  return value;
+}
+container.register(DATABASE, {
+  inject: [DATABASE],
+  useFactory: identityFactory,
+});
+container.register(DATABASE, {
+  inject: [DATABASE],
+  useFactory: (database) => identityFactory(database),
+});
+
+interface RiskyOverloadedFactory {
+  (database: Database): Promise<NeedsDatabase>;
+  (database?: Database): Cache;
+}
+declare const riskyOverloadedFactory: RiskyOverloadedFactory;
+container.register(CACHE, {
+  inject: [DATABASE],
+  // @ts-expect-error overlapping overloads require a single-signature wrapper
+  useFactory: riskyOverloadedFactory,
+});
+// @ts-expect-error inferred overloaded factories cannot misbrand their return
+defineProvider({ inject: [DATABASE], useFactory: riskyOverloadedFactory });
+// @ts-expect-error explicit builders also require a safe single signature
+defineProvider<Cache>()({ inject: [DATABASE], useFactory: riskyOverloadedFactory });
+
+interface RiskyOverloadedConstructor {
+  readonly prototype: Cache;
+  new (database: Database): PromiseLike<NeedsDatabase>;
+  new (database?: Database): Cache;
+}
+declare const riskyOverloadedConstructor: RiskyOverloadedConstructor;
+// @ts-expect-error structural constructors cannot use overlapping overloads
+container.register(CACHE, {
+  inject: [DATABASE],
+  useClass: riskyOverloadedConstructor,
+});
+// @ts-expect-error inferred constructors cannot misbrand their instance type
+defineProvider({ inject: [DATABASE], useClass: riskyOverloadedConstructor });
+
+// @ts-expect-error overloaded constructors require an adapter class
+@Injectable({ inject: [DATABASE] })
+class OverloadedConstructor {
+  constructor(database: Database, cache: Cache);
+  constructor(database: Database);
+  constructor(
+    readonly database: Database,
+    readonly cache?: Cache,
+  ) {}
+}
+// @ts-expect-error overloaded constructors cannot self-register directly
+container.register(OverloadedConstructor);
+// @ts-expect-error overloaded constructors require an adapter class
+container.register(NEEDS_DATABASE, { inject: [DATABASE], useClass: OverloadedConstructor });
+
+// @ts-expect-error overloaded constructors require an adapter class
+@Injectable()
+class ZeroOverloadedConstructor {
+  constructor(database: Database);
+  constructor();
+  constructor(readonly database?: Database) {}
+}
+// @ts-expect-error overloaded constructors cannot self-register directly
+container.register(ZeroOverloadedConstructor);
+
+@Injectable({ inject: [DATABASE] })
+class OverloadedConstructorAdapter {
+  constructor(readonly database: Database) {}
+}
+container.register(OverloadedConstructorAdapter);
+
+@Injectable()
+class PrivateStaticService {
+  private static marker = 1;
+
+  static markerValue(): number {
+    return this.marker;
+  }
+}
+container.register(PrivateStaticService);
+defineProvider({ inject: [], useClass: PrivateStaticService });
+void PrivateStaticService.markerValue();
+
+class StaticOverloadedConstructor {
+  static readonly inject = [DATABASE] as const;
+  constructor(database: Database, cache: Cache);
+  constructor(database: Database);
+  constructor(
+    readonly database: Database,
+    readonly cache?: Cache,
+  ) {}
+}
+// @ts-expect-error static overloaded constructors require an adapter class
+container.register(StaticOverloadedConstructor);
+
+const widenedDependencies: readonly (typeof DATABASE)[] = [DATABASE];
+container.register(NEEDS_DATABASE, {
+  inject: widenedDependencies,
+  useFactory: (...databases: Database[]) =>
+    new NeedsDatabase(databases[0] ?? new Database()),
+});
+defineProvider<NeedsDatabase>()({
+  inject: widenedDependencies,
+  useFactory: (...databases: Database[]) =>
+    new NeedsDatabase(databases[0] ?? new Database()),
+});
+defineProvider({
+  inject: widenedDependencies,
+  useFactory: (...databases: Database[]) =>
+    new NeedsDatabase(databases[0] ?? new Database()),
+});
+container.register(NEEDS_DATABASE, {
+  inject: widenedDependencies,
+  // @ts-expect-error widened arrays may be empty, so required parameters are unsafe
+  useFactory: (database: Database) => new NeedsDatabase(database),
+});
+const possiblyEmptyProvider = {
+  inject: [] as readonly (typeof DATABASE)[],
+  useFactory: (database: Database) => new NeedsDatabase(database),
+};
+// @ts-expect-error stored widened arrays may also be empty
+container.register(NEEDS_DATABASE, possiblyEmptyProvider);
+container.register(NEEDS_DATABASE, {
+  inject: [CACHE] as readonly (typeof CACHE)[],
+  // @ts-expect-error widened dependency element types must match callback parameters
+  useFactory: (database: Database) => new NeedsDatabase(database),
+});
+
+// @ts-expect-error inferred synchronous providers cannot use an async factory
+defineProvider({ inject: [DATABASE], useFactory: async (database) => new NeedsDatabase(database) });
+declare const maybeAsyncNeedsDatabase:
+  | NeedsDatabase
+  | Promise<NeedsDatabase>;
+// @ts-expect-error inferred synchronous providers cannot return Promise unions
+defineProvider({ inject: [DATABASE], useFactory: () => maybeAsyncNeedsDatabase });
+
+declare class ThenableService implements PromiseLike<ThenableService> {
+  then<TResult1 = ThenableService, TResult2 = never>(
+    onfulfilled?:
+      | ((value: ThenableService) => TResult1 | PromiseLike<TResult1>)
+      | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+  ): PromiseLike<TResult1 | TResult2>;
+}
+// @ts-expect-error inferred class providers cannot construct Promise-like services
+defineProvider({ inject: [], useClass: ThenableService });
+// @ts-expect-error self-registration cannot construct a Promise-like service
+container.register(ThenableService);
+
+const BROAD_OBJECT = token<object>("BROAD_OBJECT");
+class LooseThenService {
+  then(): void {}
+}
+// @ts-expect-error actual Promise values remain rejected under broad service tokens
+container.register(BROAD_OBJECT, { useValue: Promise.resolve({}) });
+// @ts-expect-error actual Promise values remain rejected for multi-bindings
+container.registerMulti(BROAD_OBJECT, { useValue: Promise.resolve({}) });
+// @ts-expect-error actual async callbacks cannot masquerade as broad sync factories
+container.register(BROAD_OBJECT, { useFactory: async () => ({}) });
+// @ts-expect-error rebind keeps the actual async callback boundary
+container.rebind(BROAD_OBJECT, { useFactory: async () => ({}) });
+// @ts-expect-error actual Promise-like classes cannot masquerade as broad services
+container.register(BROAD_OBJECT, { inject: [], useClass: ThenableService });
+// @ts-expect-error callable-then values follow the runtime thenable boundary
+container.register(BROAD_OBJECT, { useValue: new LooseThenService() });
+// @ts-expect-error callable-then factories follow the runtime thenable boundary
+container.register(BROAD_OBJECT, { useFactory: () => new LooseThenService() });
+// @ts-expect-error callable-then classes follow the runtime thenable boundary
+container.register(BROAD_OBJECT, { inject: [], useClass: LooseThenService });
+// @ts-expect-error callable-then classes cannot self-register
+container.register(LooseThenService);
+// @ts-expect-error explicit builders retain the actual async callback boundary
+defineProvider<object>()({ inject: [], useFactory: async () => ({}) });
+container.register(BROAD_OBJECT, { useFactoryAsync: async () => ({}) });
+
+const PROMISE_NEEDS_DATABASE = token<Promise<NeedsDatabase>>(
+  "PROMISE_NEEDS_DATABASE",
+);
+declare const forbiddenDefinedProvider: DefinedProvider<Promise<NeedsDatabase>>;
+// @ts-expect-error defined providers cannot bypass the Promise-service boundary
+container.register(PROMISE_NEEDS_DATABASE, forbiddenDefinedProvider);
 
 // @ts-expect-error the defined provider service type is invariant
 container.register(CACHE, storedProvider);
@@ -462,10 +767,22 @@ container.rebind(DATABASE, {
 
 container.load((registry) => {
   registry.registerMulti(CACHE, { useValue: new Cache() });
+  // @ts-expect-error modules keep the actual async callback boundary
+  registry.register(BROAD_OBJECT, { useFactory: async () => ({}) });
   registry.register(NEEDS_DATABASE, {
     inject: [CACHE],
     // @ts-expect-error module factory parameters must match the dependency tuple
     useFactory: (database: Database) => new NeedsDatabase(database),
+  });
+  // @ts-expect-error module factory tuples cannot exceed callback arity
+  registry.register(SURPLUS, {
+    inject: [DATABASE],
+    useFactory: () => new StaticSurplusDependency(),
+  });
+  // @ts-expect-error module class tuples cannot exceed constructor arity
+  registry.registerMulti(SURPLUS, {
+    inject: [DATABASE],
+    useClass: StaticSurplusDependency,
   });
   // @ts-expect-error registration modules cannot escape to resolution APIs
   registry.resolve(CACHE);

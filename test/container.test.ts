@@ -508,7 +508,7 @@ describe("Container", () => {
 
     @Injectable()
     class Consumer {
-      static inject: Token<number>[] = [FIRST];
+      static inject: [Token<number>] = [FIRST];
       constructor(readonly value: number) {}
     }
 

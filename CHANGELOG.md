@@ -13,6 +13,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 - Registration-time `forwardRef()` declarations for later class tokens,
   composable with optional, all, lazy, and resolver dependencies without
   creating circular proxies.
+- Exact constructor/factory invocation checks for dependency tuple literals,
+  including valid optional, defaulted, rest, and generic signatures. Overloaded
+  callable values require a monomorphic wrapper, while widened arrays require a
+  compatible homogeneous rest signature.
 - Required and optional sync/async resolution for containers and injected
   resolvers, preserving graph failures when a provider is registered.
 - Opt-in child-to-root chained multi-resolution across containers, resolvers,
@@ -28,6 +32,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 - Registration-time rejection of non-constructible class tokens, providers,
   and dependency tuples, plus immutable snapshots of dependency descriptors
   and an executable Bun HTTP request-scope example.
+- Runtime thenable services remain rejected through broad service tokens,
+  inferred or explicit `defineProvider()` declarations, self-registration, and
+  reusable provider registration; the type boundary matches callable-`.then`
+  runtime detection.
 - Versioned agent map, architecture, execution plan, and mechanical repository
   harness based on repository-local, agent-readable feedback, plus a public API
   reference, knowledge reachability, reference/anchor and packed-document link

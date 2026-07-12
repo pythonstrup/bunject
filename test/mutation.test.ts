@@ -390,7 +390,7 @@ describe("container mutation", () => {
     container.register(ROOT, {
       inject: [BRIDGE],
       scope: "singleton",
-      useFactory: () => ({ id: ++builds }),
+      useFactory: (_bridge) => ({ id: ++builds }),
     });
 
     const first = container.resolve(ROOT);

@@ -19,8 +19,8 @@ Reference implementations:
 - [x] Class, value, sync factory, async factory, and alias providers
 - [x] Singleton, scoped, resolution, and transient lifetimes
 - [x] Nested child containers with owner-safe singleton behavior
-- [x] Typed class/symbol tokens, checked dependency tuples, and reusable
-  `defineProvider()` definitions
+- [x] Typed class/symbol tokens, type-and-arity-checked dependency tuples, and
+  reusable `defineProvider()` definitions
 - [x] Standard decorators without reflect metadata or global registration
 - [x] Multi-binding and nearest or opt-in chained sync/async `resolveAll`
 - [x] Optional, all, and lifetime-safe lazy descriptors
@@ -75,7 +75,7 @@ outside the supported package API.
 - [x] Pinned TypeScript 5.4 and current TypeScript source and packed-consumer checks
 - [x] Minimum Bun 1.3.10 and latest Bun jobs
 - [x] Minimum Bun npm-packed sync/async consumer smoke
-- [x] Local Bun 1.3.10 type, 179-test, and packed-consumer verification
+- [x] Local Bun 1.3.10 type, 188-test, and packed-consumer verification
 - [x] Packed tarball install plus isolated NodeNext, Bun, Node, declaration,
   and packaged-document link smoke
 - [x] Release publication lints and consumes the exact tarball passed to npm
@@ -99,7 +99,7 @@ outside the supported package API.
 - [x] OIDC provenance release workflow gated by the full compatibility matrix
 - [x] Minimum/latest Bun, Node 22/24/26, and Deno 2.0/latest jobs passed on the
   public GitHub repository
-- [ ] Windows packed-consumer job passes after the cross-platform npm shim fix
+- [x] Windows packed-consumer job passes after the cross-platform npm shim fix
 - [ ] npm trusted publisher and provenance release verified
 
 `api/index.d.ts.sha256` deliberately hashes every emitted declaration path and
@@ -114,6 +114,9 @@ prerelease events are rejected independently.
 The [first public CI run](https://github.com/pythonstrup/bunject/actions/runs/29155458515)
 verified every configured compatibility job except the Windows packed-consumer
 job, which exposed a platform command-resolution bug.
+The corrected [second public CI run](https://github.com/pythonstrup/bunject/actions/runs/29176357356)
+passed all eight jobs, including Windows packaging, minimum Bun, Node 22/24/26,
+and Deno 2.0/latest.
 The provenance workflow still needs npm trusted-publisher configuration and an
 actual release. Popularity, ecosystem adoption, and battle-testing remain
 external metrics and cannot be claimed from repository tests.

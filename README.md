@@ -331,13 +331,17 @@ Resolution path: UserController -> UserService -> UserRepository -> DATABASE
   decorator metadata, provider `inject`, or `static inject`.
 - Decorator dependency tuples are not inherited. A subclass with constructor
   dependencies must redeclare them; decorator scope metadata may be inherited.
+- Tuple literals are checked as real constructor/factory calls, including
+  arity; optional, defaulted, and rest parameters keep their valid call forms.
+  Wrap overloaded callables in a monomorphic arrow or adapter before registration
+  so argument and result types stay paired.
 - Keep dependency-bearing providers inline or preserve their checked tuple with
   `defineProvider<T>()`; a plain `Provider<T>` union cannot express an
   existential dependency tuple in TypeScript.
 - Parameter decorators and automatic class registration are intentionally not
   provided.
-- Promise-like values are not service values. Wrap a Promise in an object or
-  use `useFactoryAsync`.
+- Runtime thenables—values with a callable `.then`—are not service values. Wrap
+  them in a non-thenable object or use `useFactoryAsync` for the eventual result.
 - Synchronous activation, disposal, and module callbacks use block bodies with
   no returned expression. Their `undefined` return contract prevents TypeScript's
   `void` assignability rule from silently accepting an `async` function.

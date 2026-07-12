@@ -39,8 +39,10 @@ Constructor and factory dependencies are explicit tuples. `optional`, `all`,
 `lazy`, and `resolver` descriptors change resolution behavior without relying on
 runtime TypeScript metadata. `forwardRef` delays declaration evaluation only
 until registration, where it is erased before graph inspection or resolution.
-`@Injectable` stores class-local scope and tuple metadata but never registers
-globally.
+Known tuple lengths are checked as valid constructor/factory invocations;
+widened arrays require a compatible homogeneous rest signature. Overloaded
+callable values require a monomorphic wrapper or adapter.
+`@Injectable` stores class-local scope and tuple metadata but never registers globally.
 
 ## Resolution flow
 

@@ -285,6 +285,36 @@ describe("registration validation", () => {
     );
   });
 
+  test("accepts decorated constructors callable without dependencies", () => {
+    @Injectable()
+    class Optional {
+      constructor(readonly value?: number) {}
+    }
+
+    @Injectable()
+    class Defaulted {
+      constructor(readonly value = 42) {}
+    }
+
+    @Injectable()
+    class Rest {
+      readonly values: readonly number[];
+
+      constructor(...values: number[]) {
+        this.values = values;
+      }
+    }
+
+    const container = new Container();
+    container.register(Optional);
+    container.register(Defaulted);
+    container.register(Rest);
+
+    expect(container.resolve(Optional).value).toBeUndefined();
+    expect(container.resolve(Defaulted).value).toBe(42);
+    expect(container.resolve(Rest).values).toEqual([]);
+  });
+
   test("does not apply a base decorator tuple to a changed constructor", () => {
     class Database {}
     class Cache {}

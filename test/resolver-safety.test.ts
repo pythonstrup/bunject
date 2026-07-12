@@ -270,7 +270,7 @@ describe("resolver safety", () => {
     container.register(C, {
       inject: [B],
       scope: "singleton",
-      useFactoryAsync: async () => ({}),
+      useFactoryAsync: async (_b) => ({}),
     });
 
     const c = container.resolveAsync(C);
@@ -339,19 +339,19 @@ describe("resolver safety", () => {
       },
     };
     const sync = new Container();
-    sync.register(VALUE, { useFactory: () => result });
+    sync.register(VALUE, { useFactory: () => result as object });
     expect(() => sync.resolve(VALUE)).toThrow(
       expect.objectContaining({ code: "PROVIDER_FAILED", cause }),
     );
 
     const async = new Container();
-    async.register(VALUE, { useFactory: () => result });
+    async.register(VALUE, { useFactory: () => result as object });
     await expect(async.resolveAsync(VALUE)).rejects.toEqual(
       expect.objectContaining({ code: "PROVIDER_FAILED", cause }),
     );
 
     expect(() =>
-      new Container().register(VALUE, { useValue: result }),
+      new Container().register(VALUE, { useValue: result as object }),
     ).toThrow(expect.objectContaining({ code: "INVALID_PROVIDER", cause }));
   });
 });
