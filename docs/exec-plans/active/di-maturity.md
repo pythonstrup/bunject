@@ -11,13 +11,12 @@ Ecosystem adoption and battle-testing remain external evidence.
 ## Current evidence
 
 - Bun 1.3.14 and minimum Bun 1.3.10 are configured.
-- The complete local merge gate passes: 187 tests and 11,031 assertions with
+- The complete local merge gate passes: 188 tests and 11,034 assertions with
   99.11% overall lines and 99.91% functions. The private-state Container and
   every focused leaf retain 100% line coverage; the extracted resolution kernel
   has 95.05% lines and 100% functions.
-- The pre-`forwardRef()` runtime, public API, packaging, compatibility, and
-  harness baseline is committed locally through `8c76b84`; public `origin/main`
-  remains at `aa20a50` pending push approval.
+- The runtime, public API, packaging, compatibility, and harness baseline is
+  committed and pushed through `958e31f` on public `origin/main`.
 - The activation-scoped `resolver()` descriptor and provider-level cleanup
   adapters have focused, type, coverage, packed-consumer, and combined-gate
   evidence.
@@ -34,7 +33,7 @@ Ecosystem adoption and battle-testing remain external evidence.
 - Packed consumers now run the same concurrent async-context, error-path,
   singleton-coalescing, scope, and disposal scenario under Bun and Node. Deno
   2.0.0 and 2.8.1 pass type, standard-decorator, and runtime checks locally.
-- Bun 1.3.10 passes the source typecheck, all 187 tests, and the installed
+- Bun 1.3.10 passes the source typecheck, all 188 tests, and the installed
   packed-consumer smoke locally.
 - Container and Resolver optional sync/async resolution preserve every visible
   provider failure and track absent dynamic edges for cache invalidation.
@@ -54,9 +53,9 @@ Ecosystem adoption and battle-testing remain external evidence.
   are present, and both focused and combined harness checks pass.
 - npm registry currently has no public `bunject` package or release.
 - The public `pythonstrup/bunject` repository and exact package identity
-  metadata now exist. Its [first CI run][first-public-ci] passed quality,
-  minimum Bun, Node 22/24/26, and Deno 2.0/latest; Windows exposed an npm shim
-  lookup bug.
+  metadata now exist. Its [first CI run][first-public-ci] exposed an npm shim
+  lookup bug on Windows; the corrected [second CI run][second-public-ci] passed
+  quality, minimum Bun, Windows packaging, Node 22/24/26, and Deno 2.0/latest.
 - npm trusted publisher and provenance publication are not configured or
   verified, and private vulnerability reporting is still disabled.
 
@@ -65,6 +64,10 @@ Ecosystem adoption and battle-testing remain external evidence.
 - Use `@Injectable`; do not add role stereotypes such as Controller/Repository.
 - Keep registration explicit and container-local.
 - Require an explicit dependency declaration even for zero-argument classes.
+- Check tuple literals as valid constructor/factory invocations, while accepting
+  optional, defaulted, rest, and generic signatures. Require a monomorphic
+  wrapper or adapter for overloaded callable values; widened arrays require a
+  homogeneous rest signature.
 - Keep typed class/symbol tokens; use separate tokens instead of named bindings.
 - Use `forwardRef()` only to defer declaration evaluation until registration;
   materialize it before graph inspection or resolution and never create a
@@ -107,7 +110,7 @@ Ecosystem adoption and battle-testing remain external evidence.
   compressed-size budgets to the aggregate emitted JavaScript and declaration
   sets so modularization cannot bypass the existing gates.
 - Use reviewed aggregate gzip ceilings of 17 KiB for runtime JavaScript and
-  6 KiB for declarations. They cover module framing and compressor variation
+  7 KiB for declarations. They cover module framing and compressor variation
   while remaining small enough to catch material growth.
 - Keep each source module's `@ts-self-types` link aligned with its emitted
   sibling declaration because Deno does not infer adjacent `.d.ts` files.
@@ -124,9 +127,8 @@ Ecosystem adoption and battle-testing remain external evidence.
 
 ## In progress
 
-- Close the Windows packed-consumer failure, rerun the public compatibility
-  matrix, enable private vulnerability reporting, then bootstrap the first npm
-  version with maintainer 2FA and a trusted publisher.
+- Enable private vulnerability reporting, then bootstrap the first npm version
+  with maintainer 2FA and a trusted publisher.
 
 ## Remaining work
 
@@ -330,5 +332,34 @@ Ecosystem adoption and battle-testing remain external evidence.
   declaration gzip bytes. The public contract crossed the 16 KiB runtime
   ceiling by 123 bytes, so the reviewed runtime ceiling is now 17 KiB while
   declarations retain the existing 6 KiB ceiling.
+- 2026-07-12: pushed `8c76b84` and `958e31f` to public `main`; CI run
+  `29176357356` passed all eight jobs, including the corrected Windows packed
+  consumer, minimum Bun, Node 22/24/26, and both supported Deno lines.
+- 2026-07-12: made the repository harness reject external workflow actions that
+  are not pinned to a full 40-character commit SHA, preserving the existing
+  supply-chain policy mechanically without another dependency.
+- 2026-07-12: made compatibility checks job-local so deleting a required command
+  from one CI or release job cannot be masked by the same command in another
+  job; the release-only Windows path is now mechanically guarded before launch.
+- 2026-07-12: replaced raw workflow substring checks with structured YAML job
+  and step validation, requiring pinned checkout/setup actions and exact ordered
+  commands without conditional, continue-on-error, shell, working-directory, or
+  run-default bypasses.
+- 2026-07-12: closed a dependency-tuple type hole that allowed unused surplus
+  dependencies, applying invocation-arity checks to decorators, static tuples,
+  class/factory registrations, modules, and reusable providers on current and
+  minimum TypeScript while preserving optional, defaulted, rest, homogeneous
+  widened-array, and generic call forms and rejecting ambiguous overloaded
+  callables until wrapped monomorphically.
+- 2026-07-12: kept runtime thenables outside the synchronous contract when
+  tokens use broad service types, `defineProvider()` infers or declares its
+  service, classes self-register, and reusable providers are registered,
+  closing type-only paths to deterministic async-boundary errors and aligning
+  the public type with callable-`.then` runtime detection.
+- 2026-07-12: measured the final arity-checked build at an unchanged 16,507
+  runtime and 6,909 declaration gzip bytes. The overload-safe type contract
+  crossed the 6 KiB declaration ceiling by 765 bytes, so its reviewed ceiling
+  is now 7 KiB.
 
 [first-public-ci]: https://github.com/pythonstrup/bunject/actions/runs/29155458515
+[second-public-ci]: https://github.com/pythonstrup/bunject/actions/runs/29176357356

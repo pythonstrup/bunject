@@ -181,12 +181,65 @@ for (const script of [
   }
 }
 
-const ciWorkflow = (
-  await readFile(join(root, ".github/workflows/ci.yml"), "utf8")
-).replaceAll("\r\n", "\n");
-const releaseWorkflow = (
-  await readFile(join(root, ".github/workflows/release.yml"), "utf8")
-).replaceAll("\r\n", "\n");
+interface WorkflowStep {
+  readonly uses?: unknown;
+  readonly run?: unknown;
+  readonly with?: Record<string, unknown>;
+  readonly env?: Record<string, unknown>;
+  readonly if?: unknown;
+  readonly "continue-on-error"?: unknown;
+  readonly "working-directory"?: unknown;
+  readonly shell?: unknown;
+}
+
+interface WorkflowJob {
+  readonly uses?: unknown;
+  readonly "runs-on"?: unknown;
+  readonly strategy?: { readonly matrix?: Record<string, unknown> };
+  readonly steps?: readonly WorkflowStep[];
+  readonly needs?: unknown;
+  readonly if?: unknown;
+  readonly environment?: unknown;
+  readonly permissions?: Record<string, unknown>;
+  readonly "continue-on-error"?: unknown;
+  readonly defaults?: { readonly run?: unknown };
+}
+
+interface WorkflowDocument {
+  readonly defaults?: { readonly run?: unknown };
+  readonly jobs?: Record<string, WorkflowJob>;
+}
+
+const ciWorkflow = parseWorkflow(
+  await readFile(join(root, ".github/workflows/ci.yml"), "utf8"),
+);
+const releaseWorkflow = parseWorkflow(
+  await readFile(join(root, ".github/workflows/release.yml"), "utf8"),
+);
+for (const [name, workflow] of [
+  ["CI", ciWorkflow],
+  ["release", releaseWorkflow],
+] as const) {
+  if (workflow.defaults?.run !== undefined) {
+    failures.push(`${name} workflow must not override run defaults.`);
+  }
+  for (const [jobName, job] of Object.entries(workflow.jobs ?? {})) {
+    for (const reference of [
+      job.uses,
+      ...(job.steps ?? []).map((step) => step.uses),
+    ]) {
+      if (reference === undefined) continue;
+      if (
+        typeof reference !== "string" ||
+        !/^[^@\s]+@[0-9a-f]{40}$/.test(reference)
+      ) {
+        failures.push(
+          `${name} ${jobName} action must use a full commit SHA: ${String(reference)}.`,
+        );
+      }
+    }
+  }
+}
 const compatibilityJobs = [
   "quality",
   "minimum-bun",
@@ -194,64 +247,203 @@ const compatibilityJobs = [
   "windows-package",
   "deno-runtime",
 ] as const;
-for (const job of compatibilityJobs) {
-  if (!ciWorkflow.includes(`\n  ${job}:\n`)) {
-    failures.push(`CI workflow is missing the ${job} job.`);
-  }
-  if (!releaseWorkflow.includes(`\n  ${job}:\n`)) {
-    failures.push(`Release workflow is missing the ${job} compatibility job.`);
+interface CompatibilityRequirement {
+  readonly runsOn: string;
+  readonly bunVersion: string;
+  readonly nodeVersion?: string;
+  readonly nodeMatrix?: readonly string[];
+  readonly denoVersion?: string;
+  readonly denoMatrix?: readonly string[];
+  readonly commands: readonly string[];
+}
+
+const compatibilityRequirements = {
+  quality: {
+    runsOn: "ubuntu-latest",
+    bunVersion: "latest",
+    nodeVersion: "22",
+    commands: ["bun ci", "bun run check"],
+  },
+  "minimum-bun": {
+    runsOn: "ubuntu-latest",
+    bunVersion: "1.3.10",
+    nodeVersion: "22",
+    commands: [
+      "bun ci",
+      "bun run typecheck",
+      "bun test",
+      "bun run package:check",
+    ],
+  },
+  "node-runtime": {
+    runsOn: "ubuntu-latest",
+    bunVersion: "latest",
+    nodeVersion: "${{ matrix.node }}",
+    nodeMatrix: ["22", "24", "26"],
+    commands: ["bun ci", "bun run package:check"],
+  },
+  "windows-package": {
+    runsOn: "windows-latest",
+    bunVersion: "latest",
+    nodeVersion: "22",
+    commands: ["bun ci", "bun run package:check"],
+  },
+  "deno-runtime": {
+    runsOn: "ubuntu-latest",
+    bunVersion: "latest",
+    denoVersion: "${{ matrix.deno }}",
+    denoMatrix: ["v2.0.0", "v2.x"],
+    commands: ["bun ci", "bun run test:deno"],
+  },
+} as const satisfies Record<
+  (typeof compatibilityJobs)[number],
+  CompatibilityRequirement
+>;
+for (const [name, workflow] of [
+  ["CI", ciWorkflow],
+  ["release", releaseWorkflow],
+] as const) {
+  for (const jobName of compatibilityJobs) {
+    const job = workflow.jobs?.[jobName];
+    if (!job) {
+      failures.push(`${name} workflow is missing the ${jobName} job.`);
+      continue;
+    }
+    const requirement: CompatibilityRequirement =
+      compatibilityRequirements[jobName];
+    if (job["runs-on"] !== requirement.runsOn) {
+      failures.push(
+        `${name} ${jobName} must run on ${requirement.runsOn}.`,
+      );
+    }
+    requireSafeJob(name, jobName, job);
+    requireExactActions(
+      name,
+      jobName,
+      job,
+      requirement.denoVersion === undefined
+        ? ["actions/checkout@", "oven-sh/setup-bun@", "actions/setup-node@"]
+        : ["actions/checkout@", "oven-sh/setup-bun@", "denoland/setup-deno@"],
+    );
+    requireRunSteps(name, jobName, job, requirement.commands);
+    requireExactActionInputs(name, jobName, job, "actions/checkout@", {});
+    requireExactActionInputs(
+      name,
+      jobName,
+      job,
+      "oven-sh/setup-bun@",
+      { "bun-version": requirement.bunVersion },
+    );
+    if (requirement.nodeVersion !== undefined) {
+      requireExactActionInputs(
+        name,
+        jobName,
+        job,
+        "actions/setup-node@",
+        { "node-version": requirement.nodeVersion },
+      );
+    }
+    if (requirement.denoVersion !== undefined) {
+      requireExactActionInputs(
+        name,
+        jobName,
+        job,
+        "denoland/setup-deno@",
+        { "deno-version": requirement.denoVersion },
+      );
+    }
+    if (requirement.nodeMatrix !== undefined) {
+      requireMatrix(name, jobName, job, "node", requirement.nodeMatrix);
+    }
+    if (requirement.denoMatrix !== undefined) {
+      requireMatrix(name, jobName, job, "deno", requirement.denoMatrix);
+    }
   }
 }
-for (const marker of [
-  "bun-version: 1.3.10",
-  "node: [22, 24, 26]",
-  "runs-on: windows-latest",
-  "deno: [v2.0.0, v2.x]",
-  "deno-version: ${{ matrix.deno }}",
-  "bun run check",
-  "bun run package:check",
-  "bun run test:deno",
-]) {
-  if (!ciWorkflow.includes(marker)) {
-    failures.push(`CI workflow is missing: ${marker}.`);
+const publishJob = releaseWorkflow.jobs?.["publish"];
+if (!publishJob) {
+  failures.push("Release workflow is missing the publish job.");
+} else {
+  if (publishJob.if !== "github.event.release.prerelease == false") {
+    failures.push("Release publish must reject GitHub prereleases at job level.");
   }
-  if (!releaseWorkflow.includes(marker)) {
-    failures.push(`Release compatibility gates are missing: ${marker}.`);
+  if (publishJob.environment !== "npm") {
+    failures.push("Release publish must use the npm environment.");
   }
-}
-const publishIndex = releaseWorkflow.indexOf("\n  publish:\n");
-const publishJob = publishIndex === -1
-  ? ""
-  : releaseWorkflow.slice(publishIndex);
-if (!publishJob.includes("    needs:\n")) {
-  failures.push("Release publish must depend on compatibility jobs.");
-}
-if (
-  !publishJob
-    .split("\n")
-    .includes("    if: github.event.release.prerelease == false")
-) {
-  failures.push("Release publish must reject GitHub prereleases at job level.");
-}
-for (const job of compatibilityJobs) {
-  if (!publishJob.includes(`      - ${job}\n`)) {
-    failures.push(`Release publish must wait for ${job}.`);
+  if (publishJob["runs-on"] !== "ubuntu-latest") {
+    failures.push("Release publish must run on ubuntu-latest.");
   }
-}
-for (const marker of [
-  "id-token: write",
-  "RELEASE_TAG: ${{ github.event.release.tag_name }}",
-  "RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}",
-  "GITHUB_REPOSITORY: ${{ github.repository }}",
-  "bun run release:check",
-  "bun pm pack --ignore-scripts --filename bunject.tgz --quiet",
-  "bun run scripts/package-lint.ts bunject.tgz",
-  "bun run scripts/package-smoke.ts bunject.tgz",
-  "npm publish ./bunject.tgz --provenance --access public",
-]) {
-  if (!publishJob.includes(marker)) {
-    failures.push(`Release publish is missing: ${marker}.`);
+  if (
+    publishJob["continue-on-error"] !== undefined &&
+    publishJob["continue-on-error"] !== false
+  ) {
+    failures.push("Release publish must not suppress job failures.");
   }
+  if (publishJob.defaults?.run !== undefined) {
+    failures.push("Release publish must not override run defaults.");
+  }
+  if (publishJob.permissions?.["id-token"] !== "write") {
+    failures.push("Release publish must grant id-token: write.");
+  }
+  if (!Array.isArray(publishJob.needs)) {
+    failures.push("Release publish must list every compatibility dependency.");
+  }
+  for (const job of compatibilityJobs) {
+    if (!Array.isArray(publishJob.needs) || !publishJob.needs.includes(job)) {
+      failures.push(`Release publish must wait for ${job}.`);
+    }
+  }
+  const releaseCheckStep = (publishJob.steps ?? []).find(
+    (step) => normalizedRun(step) === "bun run release:check",
+  );
+  for (const [key, value] of [
+    ["RELEASE_TAG", "${{ github.event.release.tag_name }}"],
+    ["RELEASE_PRERELEASE", "${{ github.event.release.prerelease }}"],
+    ["GITHUB_REPOSITORY", "${{ github.repository }}"],
+  ] as const) {
+    if (releaseCheckStep?.env?.[key] !== value) {
+      failures.push(`Release publish is missing environment value ${key}.`);
+    }
+  }
+  requireExactActions("release", "publish", publishJob, [
+    "actions/checkout@",
+    "oven-sh/setup-bun@",
+    "actions/setup-node@",
+  ]);
+  requireExactActionInputs(
+    "release",
+    "publish",
+    publishJob,
+    "actions/checkout@",
+    {},
+  );
+  requireExactActionInputs(
+    "release",
+    "publish",
+    publishJob,
+    "oven-sh/setup-bun@",
+    { "bun-version": "1.3.14" },
+  );
+  requireExactActionInputs(
+    "release",
+    "publish",
+    publishJob,
+    "actions/setup-node@",
+    {
+      "node-version": "24",
+      "registry-url": "https://registry.npmjs.org",
+      "package-manager-cache": "false",
+    },
+  );
+  requireRunSteps("release", "publish", publishJob, [
+    "npm install --global npm@11.18.0",
+    "bun ci",
+    "bun run release:check",
+    "bun pm pack --ignore-scripts --filename bunject.tgz --quiet",
+    "bun run scripts/package-lint.ts bunject.tgz\n" +
+      "bun run scripts/package-smoke.ts bunject.tgz",
+    "npm publish ./bunject.tgz --provenance --access public",
+  ]);
 }
 
 const tsconfig = JSON.parse(
@@ -522,6 +714,169 @@ console.log(
 function throwHarnessFailure(): never {
   const uniqueFailures = [...new Set(failures)];
   throw new Error(`Harness check failed:\n- ${uniqueFailures.join("\n- ")}`);
+}
+
+function parseWorkflow(source: string): WorkflowDocument {
+  const parsed: unknown = Bun.YAML.parse(source);
+  return typeof parsed === "object" && parsed !== null
+    ? (parsed as WorkflowDocument)
+    : {};
+}
+
+function requireSafeJob(
+  workflowName: string,
+  jobName: string,
+  job: WorkflowJob,
+): void {
+  if (job.if !== undefined) {
+    failures.push(`${workflowName} ${jobName} must not be conditional.`);
+  }
+  if (
+    job["continue-on-error"] !== undefined &&
+    job["continue-on-error"] !== false
+  ) {
+    failures.push(`${workflowName} ${jobName} must not suppress failures.`);
+  }
+  if (job.defaults?.run !== undefined) {
+    failures.push(`${workflowName} ${jobName} must not override run defaults.`);
+  }
+}
+
+function requireSafeStep(
+  workflowName: string,
+  jobName: string,
+  step: WorkflowStep,
+  label: string,
+): void {
+  if (step.if !== undefined) {
+    failures.push(`${workflowName} ${jobName} ${label} must not be conditional.`);
+  }
+  if (
+    step["continue-on-error"] !== undefined &&
+    step["continue-on-error"] !== false
+  ) {
+    failures.push(`${workflowName} ${jobName} ${label} must not suppress failures.`);
+  }
+  if (step["working-directory"] !== undefined || step.shell !== undefined) {
+    failures.push(
+      `${workflowName} ${jobName} ${label} must use the default execution context.`,
+    );
+  }
+}
+
+function requireAction(
+  workflowName: string,
+  jobName: string,
+  job: WorkflowJob,
+  action: string,
+): WorkflowStep | undefined {
+  const matches = (job.steps ?? []).filter(
+    (candidate) =>
+      typeof candidate.uses === "string" && candidate.uses.startsWith(action),
+  );
+  const step = matches[0];
+  if (matches.length > 1) {
+    failures.push(
+      `${workflowName} ${jobName} must use action ${action} exactly once.`,
+    );
+  }
+  if (!step) {
+    failures.push(`${workflowName} ${jobName} is missing action ${action}.`);
+    return undefined;
+  }
+  requireSafeStep(workflowName, jobName, step, action);
+  return step;
+}
+
+function requireExactActions(
+  workflowName: string,
+  jobName: string,
+  job: WorkflowJob,
+  expected: readonly string[],
+): void {
+  const steps = (job.steps ?? []).filter(
+    (step): step is WorkflowStep & { readonly uses: string } =>
+      typeof step.uses === "string",
+  );
+  const exact =
+    steps.length === expected.length &&
+    steps.every((step, index) => step.uses.startsWith(expected[index]!));
+  if (!exact) {
+    failures.push(
+      `${workflowName} ${jobName} actions must be exactly: ${expected.join(", ")}.`,
+    );
+  }
+  for (const step of steps) {
+    requireSafeStep(workflowName, jobName, step, `action ${step.uses}`);
+  }
+}
+
+function normalizedRun(step: WorkflowStep): string | undefined {
+  return typeof step.run === "string"
+    ? step.run.replaceAll("\r\n", "\n").trim()
+    : undefined;
+}
+
+function requireRunSteps(
+  workflowName: string,
+  jobName: string,
+  job: WorkflowJob,
+  commands: readonly string[],
+): void {
+  const steps = (job.steps ?? [])
+    .map((step) => ({ command: normalizedRun(step), step }))
+    .filter(
+      (entry): entry is { command: string; step: WorkflowStep } =>
+        entry.command !== undefined,
+    );
+  if (
+    JSON.stringify(steps.map((entry) => entry.command)) !==
+    JSON.stringify(commands)
+  ) {
+    failures.push(
+      `${workflowName} ${jobName} run steps must be exactly: ${commands.join("; ")}.`,
+    );
+  }
+  for (const { command, step } of steps) {
+    requireSafeStep(workflowName, jobName, step, `run step ${command}`);
+  }
+}
+
+function requireExactActionInputs(
+  workflowName: string,
+  jobName: string,
+  job: WorkflowJob,
+  action: string,
+  expected: Readonly<Record<string, string>>,
+): void {
+  const step = requireAction(workflowName, jobName, job, action);
+  const actualEntries = Object.entries(step?.with ?? {})
+    .map(([key, value]) => [key, String(value)] as const)
+    .sort(([left], [right]) => left.localeCompare(right));
+  const expectedEntries = Object.entries(expected).sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
+  if (JSON.stringify(actualEntries) !== JSON.stringify(expectedEntries)) {
+    failures.push(
+      `${workflowName} ${jobName} ${action} inputs must be exactly ${JSON.stringify(expected)}.`,
+    );
+  }
+}
+
+function requireMatrix(
+  workflowName: string,
+  jobName: string,
+  job: WorkflowJob,
+  key: string,
+  expected: readonly string[],
+): void {
+  const actual = job.strategy?.matrix?.[key];
+  const values = Array.isArray(actual) ? actual.map(String) : [];
+  if (JSON.stringify(values) !== JSON.stringify(expected)) {
+    failures.push(
+      `${workflowName} ${jobName} matrix ${key} must be ${expected.join(", ")}.`,
+    );
+  }
 }
 
 async function readDirectoryIfPresent(directory: string): Promise<string[]> {

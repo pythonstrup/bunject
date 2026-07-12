@@ -65,14 +65,18 @@ every emitted `.d.ts` path and normalized content; size budgets aggregate every
 emitted `.js` and `.d.ts` file so splitting cannot evade either gate. The
 harness rejects repository TypeScript files outside the main, example, or Deno
 checker domains so a new tool directory cannot silently become IDE-only. It
-also requires the CI and release workflows, their
-supported-runtime jobs, and the compatibility-gated OIDC provenance contract
-that lints, consumes, and publishes the same tarball. It parses the bug issue
-form with Bun's native YAML parser and requires the runtime, runtime version,
-TypeScript version, reproduction, complete error, and expected behavior. A
-release must be a stable GitHub release whose case-sensitive repository
-coordinate matches package metadata; packing skips lifecycle scripts so the
-already checked build is the exact build placed in the archive.
+also parses the CI and release workflows with Bun's native YAML parser and
+requires exact, ordered, failure-propagating commands in the default shell and
+working directory of each supported-runtime job. Workflow- and job-level run
+defaults are forbidden, and guarded actions must use their exact reviewed input
+maps (including no checkout override) plus full-SHA external action pins; local
+actions remain disallowed until their transitive references are checked. The
+compatibility-gated OIDC contract must lint, consume, and publish the same
+tarball. The same parser checks that the bug issue form requires the runtime,
+runtime version, TypeScript version, reproduction, complete error, and expected
+behavior. A release must be a stable GitHub release whose case-sensitive
+repository coordinate matches package metadata; packing skips lifecycle
+scripts so the already checked build is the exact build placed in the archive.
 
 ## Change loop
 

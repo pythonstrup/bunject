@@ -54,7 +54,6 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: bun ci
-      - run: bun run build
       - run: bun run package:check
 
   windows-package:
