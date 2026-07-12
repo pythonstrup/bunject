@@ -34,7 +34,7 @@ Ecosystem adoption and battle-testing remain external evidence.
   cycle, independent-family isolation, error-path, singleton-coalescing, scope,
   and disposal scenario under Bun and Node. Deno 2.0.0 and 2.8.1 pass type,
   standard-decorator, and runtime checks locally.
-- Bun 1.3.10 passes the source typecheck, all 214 tests, and the installed
+- Bun 1.3.10 passes the source typecheck, all 226 tests, and the installed
   packed-consumer smoke locally.
 - Container and Resolver optional sync/async resolution preserve every visible
   provider failure and track absent dynamic edges for cache invalidation.
@@ -62,8 +62,9 @@ Ecosystem adoption and battle-testing remain external evidence.
   quality, minimum Bun, Windows packaging, Node 22/24/26, and Deno 2.0/latest.
 - The [workflow-hardening CI run][workflow-hardening-ci] passed all eight jobs
   after exact command and pinned-action checks were tightened.
-- npm trusted publisher and provenance publication are not configured or
-  verified, and private vulnerability reporting is still disabled.
+- GitHub private vulnerability reporting is enabled and the release workflow's
+  `npm` environment exists. The npm package, trusted publisher, and provenance
+  publication are not yet present or verified.
 
 ## Decisions
 
@@ -106,7 +107,12 @@ Ecosystem adoption and battle-testing remain external evidence.
   share one minimal contract, while provider `onActivation` already covers
   deterministic creation-time initialization.
 - Pack a release once, lint and consume that exact archive, then pass the same
-  file to `npm publish`; do not rebuild an unverified publication artifact.
+  file to lifecycle-free `npm publish`; do not rebuild an unverified
+  publication artifact. Keep the same path repeatable through
+  `release:rehearse` without publishing.
+- Bootstrap the previously unclaimed npm name once with a revocable token from
+  the GitHub `npm` environment, then configure trusted publishing and remove
+  both the secret and token before later releases.
 - Keep the source boundary to seven files: an explicit `index.ts` public facade;
   `types.ts`, `dependencies.ts`, `providers.ts`, and `errors.ts` leaves; a
   container-state-free `resolution.ts` kernel; and one private-state
@@ -142,18 +148,18 @@ Ecosystem adoption and battle-testing remain external evidence.
 
 ## In progress
 
-- Enable private vulnerability reporting, then bootstrap the first npm version
-  with maintainer 2FA and a trusted publisher.
+- Bootstrap the first npm version with maintainer 2FA and the one-time GitHub
+  Actions token path, then configure and verify the trusted publisher.
 
 ## Remaining work
 
+- Remove the `NPM_TOKEN` fallback and its harness expectation after the first
+  publish, trusted-publisher verification, secret deletion, and token revocation.
 - Add token-level observers only after a concrete instrumentation consumer
   defines cache-hit, hierarchy, async, cardinality, and removal semantics.
 - Compare declarations against the previous published tarball after the first
   release; the current hash is deliberately a drift/review gate, not a SemVer
   compatibility proof.
-- Enable private vulnerability reporting and replace the provisional security
-  route with the final advisory URL or a monitored fallback contact.
 
 ## Exit criteria
 
@@ -166,6 +172,17 @@ Ecosystem adoption and battle-testing remain external evidence.
 
 ## Progress
 
+- 2026-07-12: repeated independent feature-parity, release, and adversarial
+  runtime audits after one-off construction; no reproducible local P0-P2 or
+  required DI API gap remained, leaving first npm publication as the only P0.
+- 2026-07-12: enabled GitHub private vulnerability reporting and provisioned
+  the release workflow's `npm` environment without speculative approval or
+  branch restrictions.
+- 2026-07-12: added a dependency-free `release:rehearse` command that builds
+  once, checks metadata, packs without lifecycle scripts, lints and consumes the
+  exact archive, then validates its npm dry-run identity, integrity, file count,
+  and SHA-256. The release publish step now also suppresses lifecycle scripts
+  and exposes only a documented one-time bootstrap-secret fallback.
 - 2026-07-11: established the Git baseline and production kernel gates.
 - 2026-07-11: fixed concurrent construction/disposal/mutation correctness gaps.
 - 2026-07-11: began established-container parity and agent-harness work.

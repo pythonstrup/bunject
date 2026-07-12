@@ -35,6 +35,8 @@ signals are:
 - an executable, type-checked Bun HTTP request-scope example;
 - package-lint, aggregate emitted-declaration hash, and aggregate emitted
   JavaScript/declaration compressed-size gates;
+- an exact-tarball release rehearsal that builds once, lints and consumes the
+  archive, then applies lifecycle-free `npm publish --dry-run` to the same file;
 - isolated Bunject benchmarks plus informational peer context for performance
   evidence;
 - `harness:check` for repository maps, links, TypeScript-checker coverage, and
@@ -78,7 +80,9 @@ defaults are forbidden, and guarded actions must use their exact reviewed input
 maps (including no checkout override) plus full-SHA external action pins; local
 actions remain disallowed until their transitive references are checked. The
 compatibility-gated OIDC contract must lint, consume, and publish the same
-tarball. The same parser checks that the bug issue form requires the runtime,
+tarball without lifecycle scripts; `release:rehearse` exercises that artifact
+path locally without publishing. The same parser checks that the bug issue form
+requires the runtime,
 runtime version, TypeScript version, reproduction, complete error, and expected
 behavior. A release must be a stable GitHub release whose case-sensitive
 repository coordinate matches package metadata; packing skips lifecycle

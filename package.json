@@ -56,6 +56,7 @@
     "package:lint": "bun run scripts/package-lint.ts",
     "prepack": "bun run build",
     "release:check": "bun run build && bun run scripts/project-check.ts --release",
+    "release:rehearse": "bun run scripts/release-rehearse.ts",
     "size": "bun run build && bun run scripts/size-check.ts",
     "test:coverage": "bun test --coverage",
     "test:deno": "bun run build && deno check scripts/deno-smoke.ts && deno run scripts/deno-smoke.ts",

@@ -47,8 +47,16 @@ A change should explain why it is needed, identify the public contract it
 affects, and list the commands that passed. Releases are maintainer-controlled:
 do not create release tags or publish a locally rebuilt package.
 
+Before finalizing a release, run `bun run release:rehearse`. It builds once,
+checks project metadata, packs without lifecycle scripts, lints and consumes
+that exact tarball, and applies `npm publish --dry-run` to the same file.
+
 The first npm publication requires a maintainer-authenticated, 2FA-protected
-bootstrap. Later releases use the repository's stable GitHub release workflow
-only after the exact public repository coordinate and npm trusted publisher are
-configured. The workflow builds once, verifies that output, and packs it without
-running lifecycle scripts again.
+bootstrap because a trusted publisher cannot be attached before the package
+exists. Put a one-time granular publish token in the GitHub `npm` environment as
+`NPM_TOKEN`, then publish the stable `v<version>` GitHub release. After that
+workflow succeeds, configure `pythonstrup/bunject`, `release.yml`, environment
+`npm`, and `npm publish` as the package's trusted publisher, then delete the
+secret and revoke the token. Later releases use OIDC only. The workflow builds
+once and lints, consumes, and publishes the same archive without running
+lifecycle scripts during packing or publication.

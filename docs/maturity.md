@@ -82,6 +82,8 @@ outside the supported package API.
 - [x] Packed tarball install plus isolated NodeNext, Bun, Node, declaration,
   and packaged-document link smoke
 - [x] Release publication lints and consumes the exact tarball passed to npm
+- [x] Repeatable exact-tarball release rehearsal through lifecycle-free npm
+  publish dry-run
 - [x] Stable GitHub release, exact repository-coordinate, and no-rebuild pack
   gates configured
 - [x] Node 22/24/26 runtime matrix configured
@@ -97,6 +99,7 @@ outside the supported package API.
 - [x] Clean cross-platform build output without stale or unshipped declaration maps
 - [x] Zero runtime dependencies and allowlisted package payload
 - [x] MIT license, changelog, security policy, and support policy
+- [x] GitHub private vulnerability reporting enabled for the documented route
 - [x] Repository invariants, AGENTS-rooted knowledge reachability, local inline
   and reference links/anchors, and execution-plan structure checked mechanically
 - [x] Deno 2.0.0 and latest-Deno-2 compatibility matrix configured
@@ -126,6 +129,8 @@ and Deno 2.0/latest.
 The [workflow-hardening run](https://github.com/pythonstrup/bunject/actions/runs/29180327856)
 also passed all eight jobs after command-level compatibility and action-pin
 checks were tightened.
-The provenance workflow still needs npm trusted-publisher configuration and an
-actual release. Popularity, ecosystem adoption, and battle-testing remain
-external metrics and cannot be claimed from repository tests.
+The GitHub `npm` environment and private vulnerability reporting are enabled.
+The provenance workflow still needs the one-time first-package bootstrap, npm
+trusted-publisher configuration, and an actual release. Popularity, ecosystem
+adoption, and battle-testing remain external metrics and cannot be claimed from
+repository tests.

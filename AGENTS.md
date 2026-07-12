@@ -51,6 +51,7 @@ implementation details and must not become package subpath exports.
 - `bun run harness:check`: repository knowledge and invariant checks.
 - `bun run check`: complete local merge gate.
 - `bun run package:check`: npm-packed Bun and Node consumer smoke.
+- `bun run release:rehearse`: exact-tarball lint, consumer, and npm dry-run.
 - `bun run test:deno`: Deno 2 consumer smoke when Deno is installed.
 - `bun run example:check`: executable Bun HTTP request-scope example.
 - `bun run bench:bunject`: Bunject-only hot-path evidence.

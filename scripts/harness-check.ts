@@ -45,6 +45,7 @@ const requiredFiles = [
   "tsconfig.build.json",
   ...sourceModules,
   "scripts/deno-smoke.ts",
+  "scripts/release-rehearse.ts",
   "scripts/runtime-smoke.mjs",
 ] as const;
 
@@ -183,6 +184,7 @@ for (const script of [
   "harness:check",
   "package:check",
   "release:check",
+  "release:rehearse",
   "test:deno",
   "typecheck:min",
   "example:check",
@@ -190,6 +192,12 @@ for (const script of [
   if (!packageJson.scripts?.[script]) {
     failures.push(`package.json is missing the ${script} script.`);
   }
+}
+if (
+  packageJson.scripts?.["release:rehearse"] !==
+  "bun run scripts/release-rehearse.ts"
+) {
+  failures.push("release:rehearse must run the reviewed rehearsal script.");
 }
 const checkSteps = (packageJson.scripts?.["check"] ?? "")
   .split("&&")
@@ -435,6 +443,16 @@ if (!publishJob) {
       failures.push(`Release publish is missing environment value ${key}.`);
     }
   }
+  const publishStep = (publishJob.steps ?? []).find(
+    (step) =>
+      normalizedRun(step) ===
+      "npm publish ./bunject.tgz --ignore-scripts --provenance --access public",
+  );
+  if (publishStep?.env?.["NODE_AUTH_TOKEN"] !== "${{ secrets.NPM_TOKEN }}") {
+    failures.push(
+      "Release publish must expose the one-time NPM_TOKEN bootstrap fallback.",
+    );
+  }
   requireExactActions("release", "publish", publishJob, [
     "actions/checkout@",
     "oven-sh/setup-bun@",
@@ -472,7 +490,7 @@ if (!publishJob) {
     "bun pm pack --ignore-scripts --filename bunject.tgz --quiet",
     "bun run scripts/package-lint.ts bunject.tgz\n" +
       "bun run scripts/package-smoke.ts bunject.tgz",
-    "npm publish ./bunject.tgz --provenance --access public",
+    "npm publish ./bunject.tgz --ignore-scripts --provenance --access public",
   ]);
 }
 

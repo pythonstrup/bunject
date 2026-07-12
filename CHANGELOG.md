@@ -57,7 +57,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 - Human contribution guidance and a structured issue form that requires runtime,
   TypeScript, reproduction, error, and expectation evidence.
 - Fail-closed stable-release checks for exact GitHub repository metadata and
-  prerelease events, with lifecycle-free packing of the already verified build.
+  prerelease events, with lifecycle-free packing and publication of the already
+  verified build plus a repeatable exact-tarball npm dry-run rehearsal.
 - Public repository package metadata and an explicit Windows `cmd.exe` wrapper
   for npm-backed packed-consumer verification.
 - Active resolution now restores same-family causal context through inactive
