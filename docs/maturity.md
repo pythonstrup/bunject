@@ -22,6 +22,7 @@ Reference implementations:
 - [x] Typed class/symbol tokens, type-and-arity-checked dependency tuples, and
   reusable `defineProvider()` definitions
 - [x] Standard decorators without reflect metadata or global registration
+- [x] Explicit one-off class construction without registry mutation or root caching
 - [x] Multi-binding and nearest or opt-in chained sync/async `resolveAll`
 - [x] Optional, all, and lifetime-safe lazy descriptors
 - [x] Registration-time class forward references without circular proxies
@@ -77,7 +78,7 @@ outside the supported package API.
 - [x] Pinned TypeScript 5.4 and current TypeScript source and packed-consumer checks
 - [x] Minimum Bun 1.3.10 and latest Bun jobs
 - [x] Minimum Bun npm-packed sync/async consumer smoke
-- [x] Local Bun 1.3.10 type, 214-test, and packed-consumer verification
+- [x] Local Bun 1.3.10 type, 226-test, and packed-consumer verification
 - [x] Packed tarball install plus isolated NodeNext, Bun, Node, declaration,
   and packaged-document link smoke
 - [x] Release publication lints and consumes the exact tarball passed to npm

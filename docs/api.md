@@ -322,6 +322,8 @@ root after its callers drain; mutation is not an immediate deactivation API.
 
 | Method or property | Result | Notes |
 | --- | --- | --- |
+| `build<TClass>(class)` | `InstanceType<TClass>` | Constructs one fresh, unregistered class root synchronously. |
+| `buildAsync<TClass>(class)` | `Promise<InstanceType<TClass>>` | Async graph form of `build()`; the root itself remains transient. |
 | `resolve<T>(token)` | `T` | Validates and resolves one provider synchronously. |
 | `resolveOptional<T>(token)` | `T \| undefined` | Absence yields `undefined`; a visible provider resolves normally. |
 | `resolveAsync<T>(token)` | `Promise<T>` | Resolves sync or async providers. Concurrent requests coalesce each cached provider. |
@@ -332,6 +334,15 @@ root after its callers drain; mutation is not an immediate deactivation API.
 | `validate<T>(token, { async?, all?, chained? })` | `void` | Checks the graph without construction. Defaults to sync/single semantics. |
 | `inspect<T>(token, options?)` | `DependencyGraph` | Returns a frozen, construction-free graph description; `{ chained: true }` expands every root binding set. |
 | `disposed` | `boolean` | `true` once sync or async disposal has started. |
+
+`build()` and `buildAsync()` accept the same explicitly injectable class
+declarations as class self-registration. They create a stack-local transient
+root without adding, reading, or replacing that class's registry binding.
+Decorator scope is therefore ignored for the root, while every registered
+dependency keeps its normal hierarchy, lifetime, cache, and async-coalescing
+behavior. The invoking container owns a disposable built root. Because the
+registry remains unchanged, `has()`, `inspect()`, and `validate()` continue to
+describe registered graphs only; each build performs its own eager preflight.
 
 `ValidationOptions.async: true` permits async providers. `all: true` validates
 every binding in the nearest set and gives absent tokens the same valid-empty

@@ -10,6 +10,9 @@ This project follows [Semantic Versioning](https://semver.org/).
 - Singleton, scoped, resolution, and transient lifetimes.
 - Child scopes, captive-dependency validation, optional/all/lazy descriptors,
   and an activation-scoped read-only Resolver with registration queries.
+- Explicit `build()` / `buildAsync()` one-off class construction with a fresh
+  unregistered root, normal dependency lifetimes, eager graph validation,
+  dynamic cache invalidation, and deterministic container ownership.
 - Registration-time `forwardRef()` declarations for later class tokens,
   composable with optional, all, lazy, and resolver dependencies without
   creating circular proxies.

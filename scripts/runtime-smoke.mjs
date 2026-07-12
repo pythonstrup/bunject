@@ -66,6 +66,13 @@ export async function runRuntimeSmoke(bunject) {
   const FIRST_ROOT = token("FIRST_ROOT");
   const SECOND_ROOT = token("SECOND_ROOT");
   const RESOURCE = token("RESOURCE");
+  class BuiltRoot {
+    static inject = [VALUE];
+
+    constructor(value) {
+      this.value = value;
+    }
+  }
   let singletonCreations = 0;
   let disposals = 0;
 
@@ -256,6 +263,17 @@ export async function runRuntimeSmoke(bunject) {
       disposals += 1;
     },
   });
+
+  const built = container.build(BuiltRoot);
+  const builtAsync = await container.buildAsync(BuiltRoot);
+  if (
+    built.value !== 42 ||
+    builtAsync.value !== 42 ||
+    built === builtAsync ||
+    container.has(BuiltRoot)
+  ) {
+    throw new Error("One-off class construction smoke test failed");
+  }
 
   const scope = container.createScope();
   scope.register(VALUE, { useValue: 21 });

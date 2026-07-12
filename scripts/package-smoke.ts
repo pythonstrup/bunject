@@ -212,6 +212,11 @@ class Application {
 @Injectable()
 class ForwardDependency {}
 
+@Injectable({ inject: [VALUE], scope: "singleton" })
+class BuiltApplication {
+  constructor(readonly value: number) {}
+}
+
 class NoDependencies {}
 class LooseThenService { then(): void {} }
 const NO_DEPENDENCIES = token<NoDependencies>("NO_DEPENDENCIES");
@@ -286,10 +291,16 @@ container.register(DOUBLE, defineProvider<number>()({
 container.register(ForwardDependency);
 container.register(Application);
 const first = container.resolve(Application);
+const built: BuiltApplication = container.build(BuiltApplication);
+const builtAsync: BuiltApplication = await container.buildAsync(BuiltApplication);
 if (
   first.value !== 42 ||
   !(first.dependency instanceof ForwardDependency) ||
   first !== container.resolve(Application) ||
+  built.value !== 42 ||
+  builtAsync.value !== 42 ||
+  built === builtAsync ||
+  container.has(BuiltApplication) ||
   container.resolve(DOUBLE) !== 84 ||
   container.resolveOptional(MISSING) !== undefined ||
   await container.resolveOptionalAsync(MISSING) !== undefined

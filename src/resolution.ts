@@ -129,6 +129,7 @@ export interface GraphAccess {
 
 interface GraphValidation {
   readonly root: AnyToken;
+  readonly rootRegistration?: Registration;
   readonly lookup: Container;
   readonly synchronous: boolean;
   readonly all: boolean;
@@ -240,6 +241,7 @@ export function inspectGraph(
 /** @internal */
 export function validateGraph({
   root,
+  rootRegistration,
   lookup,
   synchronous,
   all,
@@ -266,6 +268,24 @@ export function validateGraph({
   type VisitStates = Map<Container, Map<Registration, Set<string>>>;
   const states: VisitStates = new Map();
   const stack: Frame[] = prefix.map((token) => ({ token }));
+  const assertAcyclic = (
+    token: AnyToken,
+    path: readonly AnyToken[],
+  ): void => {
+    const cycleStart = stack.findIndex((frame) => frame.token === token);
+    if (cycleStart === -1) return;
+    const cycle = [
+      ...stack.slice(cycleStart).map((frame) => frame.token),
+      token,
+    ];
+    throw resolutionError(
+      "CIRCULAR",
+      `Circular dependency detected: ${formatPath(cycle)}.`,
+      path,
+      undefined,
+      cycle,
+    );
+  };
   const containerIds = new Map<Container, number>();
   const containerId = (container: Container): number => {
     const known = containerIds.get(container);
@@ -406,20 +426,7 @@ export function validateGraph({
     const scope = providerScope(registration.provider);
     const effectiveLookup =
       scope === "singleton" ? registration.owner : currentLookup;
-    const cycleStart = stack.findIndex((frame) => frame.token === token);
-    if (cycleStart !== -1) {
-      const cycle = [
-        ...stack.slice(cycleStart).map((frame) => frame.token),
-        token,
-      ];
-      throw resolutionError(
-        "CIRCULAR",
-        `Circular dependency detected: ${formatPath(cycle)}.`,
-        path,
-        undefined,
-        cycle,
-      );
-    }
+    assertAcyclic(token, path);
     if (wasVisited(states, effectiveLookup, registration, captor)) return;
 
     const provider = registration.provider;
@@ -511,6 +518,12 @@ export function validateGraph({
     chainedBindings = false,
   ): void => {
     const path = [...stack.map((frame) => frame.token), token];
+    if (
+      (rootRegistration && token === root) ||
+      (prefix.length > 0 && prefix.includes(token))
+    ) {
+      assertAcyclic(token, path);
+    }
     const bindingSets = access.lookupSets(
       currentLookup,
       token,
@@ -533,7 +546,17 @@ export function validateGraph({
     }
   };
 
-  visit(root, lookup, initialCaptor, all, chained);
+  if (rootRegistration) {
+    visitRegistration(
+      root,
+      rootRegistration,
+      lookup,
+      [...stack.map((frame) => frame.token), root],
+      initialCaptor,
+    );
+  } else {
+    visit(root, lookup, initialCaptor, all, chained);
+  }
 }
 
 /** @internal */

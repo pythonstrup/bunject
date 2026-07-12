@@ -11,9 +11,9 @@ Ecosystem adoption and battle-testing remain external evidence.
 ## Current evidence
 
 - Bun 1.3.14 and minimum Bun 1.3.10 are configured.
-- The complete local merge gate passes: 214 tests and 11,127 assertions with
-  99.34% overall lines and 99.85% functions. The private-state Container retains
-  99.92% line coverage; the extracted resolution kernel has 96.94% lines and
+- The complete local merge gate passes: 226 tests and 11,186 assertions with
+  99.35% overall lines and 99.86% functions. The private-state Container retains
+  99.92% line coverage; the extracted resolution kernel has 97.05% lines and
   100% functions.
 - The runtime, public API, packaging, compatibility, and harness baseline is
   committed and pushed on public `origin/main`.
@@ -38,6 +38,9 @@ Ecosystem adoption and battle-testing remain external evidence.
   packed-consumer smoke locally.
 - Container and Resolver optional sync/async resolution preserve every visible
   provider failure and track absent dynamic edges for cache invalidation.
+- `build()` and `buildAsync()` construct one fresh unregistered class root while
+  retaining registered dependency lifetimes, child lookup, eager validation,
+  dynamic cache invalidation, and deterministic ownership.
 - Opt-in chained multi-resolution aggregates child-to-root binding sets across
   Container, Resolver, descriptors, validation, inspection, and mutation while
   nearest-set shadowing remains the default.
@@ -78,6 +81,9 @@ Ecosystem adoption and battle-testing remain external evidence.
 - Do not add snapshot/restore, global auto-registration, legacy decorators,
   circular proxies, or runtime dependencies without new evidence.
 - Preserve sync/async API separation and deterministic ownership.
+- Keep one-off construction explicit and class-only: the build root is always
+  transient and never mutates or reads its own binding, while dependencies keep
+  their declared lookup semantics. Do not add recursive autobind.
 - Treat provider cleanup callbacks as the complete ownership contract when
   present: async-first for `disposeAsync`, sync-only for `dispose`, and no
   implicit Symbol callback in the same activation.
@@ -413,6 +419,18 @@ Ecosystem adoption and battle-testing remain external evidence.
 - 2026-07-12: the causal session graph raises reviewed runtime output to 18,697
   gzip bytes, so the runtime ceiling is now 19 KiB; declarations remain 6,909
   gzip bytes under the existing 7 KiB ceiling.
+- 2026-07-12: added class-only `build()` / `buildAsync()` after comparing
+  Awilix one-off build, TSyringe implicit construction, and Inversify autobind.
+  The root is a stack-local transient; registered dependencies retain their
+  normal hierarchy, lifetime, resolution session, and ownership semantics.
+- 2026-07-12: adversarial review closed metadata-time disposal reentry and
+  direct or indirect back-edges into an unregistered build root. Atomic metadata
+  preparation prevents post-disposal resource leaks, and active-prefix graph
+  validation reports structured cycles before missing lookup or side effects.
+- 2026-07-12: the complete 226-test gate passes with 11,186 assertions, 99.35%
+  line and 99.86% function coverage, TypeScript 5.4/current, packed Bun/Node
+  consumers, Bun 1.3.10, and Deno 2.0.0/2.8.1. Runtime output is 19,286 gzip
+  bytes under the 19 KiB ceiling; declarations are 6,958 bytes under 7 KiB.
 
 [first-public-ci]: https://github.com/pythonstrup/bunject/actions/runs/29155458515
 [second-public-ci]: https://github.com/pythonstrup/bunject/actions/runs/29176357356

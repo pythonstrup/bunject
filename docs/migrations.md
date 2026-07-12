@@ -37,6 +37,11 @@ with typed symbol tokens, and `getAll()` with `resolveAll()`. `createChild()`
 maps to `createScope()`. Use `lazy()` for an intentionally deferred edge;
 Bunject does not create circular proxies. Inversify's `{ optional: true }`
 maps to `resolveOptional()` or `resolveOptionalAsync()`.
+Inversify autobind creates a lasting binding. Use `build(Class)` for a one-off
+unregistered root, or `register(Class)` when later resolutions should see the
+binding and preserve its configured scope. Bunject bypasses registration only
+for the build root. Dependencies keep their declared lookup semantics, and a
+required class token is not recursively autobound.
 
 ## From TSyringe
 
@@ -61,6 +66,10 @@ Replace constructor parameter decorators with explicit tuples. TSyringe child
 containers map to `createScope()`, `injectAll()` maps to `all()`, and
 `isRegistered(token, true)` maps to `has(token)` (`{ own: true }` disables the
 parent lookup).
+TSyringe can resolve an unregistered class directly; the explicit Bunject
+equivalent is `build(Class)` or `buildAsync(Class)`. Only that root may be
+unregistered in Bunject. Dependencies keep their declared lookup semantics,
+and a required class token is not recursively constructed.
 
 TSyringe's conventional `dispose()` interface can use the standard resource
 protocol:
@@ -112,6 +121,9 @@ Replace string cradle keys with invariant typed tokens. Awilix `singleton`,
 `resolution`, which is shared only within one top-level graph. Awilix scopes map
 to `createScope()`. Awilix `{ allowUnregistered: true }` maps to
 `resolveOptional()` or `resolveOptionalAsync()`.
+Awilix `container.build(MyClass)` maps directly to Bunject
+`container.build(MyClass)`; Bunject's form is class-only and owns a disposable
+built root until its invoking container is disposed.
 
 Awilix factories receive a cradle; Bunject factories receive their declared
 dependencies in tuple order. This keeps missing dependencies and async

@@ -152,6 +152,29 @@ container.register(DECORATED_NEEDS_DATABASE, {
   useClass: DecoratedNeedsDatabase,
 });
 
+const builtStatic: StaticDependenciesMatch = container.build(
+  StaticDependenciesMatch,
+);
+const builtDecorated: DecoratedNeedsDatabase = container.build(
+  DecoratedNeedsDatabase,
+);
+const pendingBuiltDecorated: Promise<DecoratedNeedsDatabase> =
+  container.buildAsync(DecoratedNeedsDatabase);
+void builtStatic;
+void builtDecorated;
+void pendingBuiltDecorated;
+
+// @ts-expect-error build accepts concrete classes, not symbol tokens
+container.build(DATABASE);
+// @ts-expect-error build cannot construct an abstract class
+container.build(Storage);
+// @ts-expect-error build validates static inject against constructor parameters
+container.build(StaticDependenciesMismatch);
+// @ts-expect-error async build validates static inject too
+container.buildAsync(StaticDependenciesMismatch);
+// @ts-expect-error build rejects surplus static dependencies
+container.build(StaticSurplusDependency);
+
 // @ts-expect-error static inject must match constructor parameters
 container.register(StaticDependenciesMismatch);
 // @ts-expect-error metadata class providers validate static inject
@@ -345,6 +368,8 @@ container.register(CACHE, {
   inject: [DATABASE],
   useClass: riskyOverloadedConstructor,
 });
+// @ts-expect-error one-off builds also require a safe constructor signature
+container.build(riskyOverloadedConstructor);
 // @ts-expect-error inferred constructors cannot misbrand their instance type
 defineProvider({ inject: [DATABASE], useClass: riskyOverloadedConstructor });
 
@@ -456,6 +481,10 @@ declare class ThenableService implements PromiseLike<ThenableService> {
 defineProvider({ inject: [], useClass: ThenableService });
 // @ts-expect-error self-registration cannot construct a Promise-like service
 container.register(ThenableService);
+// @ts-expect-error sync builds cannot construct Promise-like services
+container.build(ThenableService);
+// @ts-expect-error async builds do not make Promise-like service values valid
+container.buildAsync(ThenableService);
 
 const BROAD_OBJECT = token<object>("BROAD_OBJECT");
 class LooseThenService {
@@ -479,6 +508,8 @@ container.register(BROAD_OBJECT, { useFactory: () => new LooseThenService() });
 container.register(BROAD_OBJECT, { inject: [], useClass: LooseThenService });
 // @ts-expect-error callable-then classes cannot self-register
 container.register(LooseThenService);
+// @ts-expect-error callable-then classes cannot be built as services
+container.build(LooseThenService);
 // @ts-expect-error explicit builders retain the actual async callback boundary
 defineProvider<object>()({ inject: [], useFactory: async () => ({}) });
 container.register(BROAD_OBJECT, { useFactoryAsync: async () => ({}) });

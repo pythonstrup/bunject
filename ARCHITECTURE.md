@@ -58,6 +58,13 @@ public resolve API
   -> track owned resource and publish cache entry
 ```
 
+`build` follows the same flow with a stack-local transient class registration
+for the root. It never enters the registry or a lifetime cache; recursive
+dependencies use ordinary lookup, and a disposable root is still owned by the
+invoking container. When build is called during provider activation, its eager
+root edges are recorded in that provider's runtime dependency collector so
+mutation cannot leave an outer cache stale.
+
 Synchronous and asynchronous APIs are separate. Pending cached providers carry
 a construction wait graph so concurrent roots coalesce without hiding cycles.
 Async-local resolution context preserves the active path, child container,

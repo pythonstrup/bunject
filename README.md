@@ -243,6 +243,26 @@ Concurrent async requests coalesce each cached provider. Dynamic calls made by
 factories retain the active path, lifetime constraint, cycle detection, and
 mutation dependency tracking.
 
+## One-off class construction
+
+```ts
+const command = container.build(Command);
+const application = await container.buildAsync(Application);
+```
+
+`build()` and `buildAsync()` construct an explicitly injectable class without
+registering it. The root is always a fresh transient, so its decorator scope
+and any existing binding for that class are ignored. Its declared dependencies
+still use the invoking container's normal hierarchy, lifetime, cache,
+coalescing, validation, and error rules.
+
+The build adds no registry entry. An otherwise-unregistered root remains absent
+from `has()`, is still missing in `inspect()`, and still fails `validate()`;
+any pre-existing binding remains visible and unchanged. A built root that
+implements the standard disposal protocol is owned by the invoking container,
+just like any other transient class result. Use `buildAsync()` when the graph
+can contain async providers.
+
 ## Activation and disposal
 
 ```ts

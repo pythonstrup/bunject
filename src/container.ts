@@ -587,6 +587,113 @@ export class Container implements Disposable, AsyncDisposable {
     });
   }
 
+  /** Constructs one unregistered class root as an owned transient. */
+  build<const TClass extends InjectableClass<any>>(
+    service: TClass &
+      StaticInjectMatchesConstructor<NoInfer<TClass>> &
+      NonPromiseMatch<InstanceType<TClass>>,
+  ): InstanceType<TClass> {
+    assertToken(service);
+    this.#assertCanResolve(service);
+    const context = this.#lookupContext(service);
+    const registration = this.#buildRegistration(service);
+    this.#recordBuildDependencies(registration.provider, context?.collector);
+    const captors = context
+      ? this.#resolutionCaptors(context, undefined)
+      : noLifetimeCaptors;
+    const captor =
+      captors.length === 0 ? undefined : this.#effectiveCaptor(captors);
+    const session = context?.session ?? createResolutionSession();
+    const ancestry = this.#resolutionAncestry(context, service);
+    const locked = this.#beginResolution();
+    try {
+      this.#validateBuildGraph(
+        service,
+        true,
+        registration,
+        captors,
+        ancestry,
+      );
+      return this.#resolveRegistrationSync(
+        service,
+        registration,
+        enterPath(service, ancestry),
+        session,
+        captor,
+        context?.collector,
+      ) as InstanceType<TClass>;
+    } finally {
+      this.#endResolution(locked);
+    }
+  }
+
+  /** Constructs one unregistered class root through the async graph path. */
+  buildAsync<const TClass extends InjectableClass<any>>(
+    service: TClass &
+      StaticInjectMatchesConstructor<NoInfer<TClass>> &
+      NonPromiseMatch<InstanceType<TClass>>,
+  ): Promise<InstanceType<TClass>> {
+    let context: ResolutionContext | undefined;
+    let registration: Registration;
+    try {
+      assertToken(service);
+      this.#assertCanResolve(service);
+      context = this.#lookupContext(service);
+      registration = this.#buildRegistration(service);
+      this.#recordBuildDependencies(registration.provider, context?.collector);
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    const captors = context
+      ? this.#resolutionCaptors(context, undefined)
+      : noLifetimeCaptors;
+    const captor =
+      captors.length === 0 ? undefined : this.#effectiveCaptor(captors);
+    return this.#trackInFlight(
+      this.#buildAsyncPublic(
+        service,
+        registration,
+        captor,
+        captors,
+        context?.collector,
+      ),
+    ) as Promise<InstanceType<TClass>>;
+  }
+
+  async #buildAsyncPublic<T>(
+    service: Token<T>,
+    registration: Registration,
+    captor: LifetimeCaptor | undefined,
+    captors: readonly LifetimeCaptor[],
+    collector: RuntimeDependencies | undefined,
+  ): Promise<T> {
+    const context = this.#activeContext();
+    const session = context?.session ?? createResolutionSession();
+    const ancestry = this.#resolutionAncestry(context, service);
+    const locked = this.#beginResolution();
+    this.#enterInFlightSession(session);
+    try {
+      this.#validateBuildGraph(
+        service,
+        false,
+        registration,
+        captors,
+        ancestry,
+      );
+      return await this.#resolveRegistrationAsync(
+        service,
+        registration,
+        enterPath(service, ancestry),
+        session,
+        captor,
+        collector,
+      );
+    } finally {
+      this.#leaveInFlightSession(session);
+      this.#endResolution(locked);
+    }
+  }
+
   /** Resolves one provider synchronously after eager-graph preflight. */
   resolve<T>(token: Token<T>): T {
     return this.#resolvePublicSync(token);
@@ -626,6 +733,7 @@ export class Container implements Disposable, AsyncDisposable {
     const locked = this.#beginResolution();
     try {
       if (optional && !this.#lookup(token)) return undefined;
+      if (ancestry.includes(token)) enterPath(token, ancestry);
       if (captors.length === 0) {
         if (ancestry.length > 0 || !this.#validatedSync.has(token)) {
           this.#validateGraph(token, true, false, undefined, ancestry);
@@ -712,6 +820,7 @@ export class Container implements Disposable, AsyncDisposable {
     this.#enterInFlightSession(session);
     try {
       if (optional && !this.#lookup(token)) return undefined;
+      if (ancestry.includes(token)) enterPath(token, ancestry);
       if (captors.length === 0) {
         if (ancestry.length > 0 || !this.#validatedAsync.has(token)) {
           this.#validateGraph(token, false, false, undefined, ancestry);
@@ -1369,6 +1478,7 @@ export class Container implements Disposable, AsyncDisposable {
     initialCaptor?: LifetimeCaptor,
     prefix: readonly AnyToken[] = [],
     chained = false,
+    rootRegistration?: Registration,
   ): void {
     const validated = all
       ? chained
@@ -1381,7 +1491,10 @@ export class Container implements Disposable, AsyncDisposable {
       : synchronous
         ? this.#validatedSync
         : this.#validatedAsync;
-    const cacheable = initialCaptor === undefined && prefix.length === 0;
+    const cacheable =
+      rootRegistration === undefined &&
+      initialCaptor === undefined &&
+      prefix.length === 0;
     if (cacheable && validated.has(root)) return;
     const validatedAsync = synchronous
       ? all
@@ -1399,9 +1512,77 @@ export class Container implements Disposable, AsyncDisposable {
       prefix,
       chained,
       access: Container.#graphAccess,
+      ...(rootRegistration ? { rootRegistration } : {}),
     });
     if (cacheable) validated.add(root);
     if (cacheable) validatedAsync?.add(root);
+  }
+
+  #buildRegistration(service: InjectableClass<any>): Registration {
+    // forwardRef and static metadata access are user code, so prepare atomically.
+    return this.#runMutation(() => ({
+      token: service,
+      owner: this,
+      provider: normalizeProvider(
+        { useClass: service, scope: "transient" },
+        service,
+      ),
+    }));
+  }
+
+  #validateBuildGraph(
+    service: AnyToken,
+    synchronous: boolean,
+    registration: Registration,
+    captors: readonly LifetimeCaptor[],
+    ancestry: readonly AnyToken[],
+  ): void {
+    if (captors.length === 0) {
+      this.#validateGraph(
+        service,
+        synchronous,
+        false,
+        undefined,
+        ancestry,
+        false,
+        registration,
+      );
+      return;
+    }
+    for (const captor of captors) {
+      this.#validateGraph(
+        service,
+        synchronous,
+        false,
+        captor,
+        ancestry,
+        false,
+        registration,
+      );
+    }
+  }
+
+  #recordBuildDependencies(
+    provider: NormalizedProvider,
+    collector?: RuntimeDependencies,
+  ): void {
+    if (!collector || provider.kind === "value") return;
+    for (const dependency of provider.inject) {
+      if (
+        isResolverDependency(dependency) ||
+        isTokenDependencyDescriptor(dependency, "lazy")
+      ) {
+        continue;
+      }
+      const dependencyToken = isTokenDependencyDescriptor(dependency)
+        ? dependency.token
+        : dependency;
+      const mode =
+        isTokenDependencyDescriptor(dependency, "all") && dependency.chained
+          ? RUNTIME_DEPENDENCY_RESOLVE | RUNTIME_DEPENDENCY_RESOLVE_CHAINED
+          : RUNTIME_DEPENDENCY_RESOLVE;
+      recordDynamicDependency(collector, this, dependencyToken, mode);
+    }
   }
 
   #resolveSync<T>(
