@@ -47,16 +47,28 @@ A change should explain why it is needed, identify the public contract it
 affects, and list the commands that passed. Releases are maintainer-controlled:
 do not create release tags or publish a locally rebuilt package.
 
-Before finalizing a release, run `bun run release:rehearse`. It builds once,
-checks project metadata, packs without lifecycle scripts, lints and consumes
-that exact tarball, and applies `npm publish --dry-run` to the same file.
+After dating the version's changelog entry, run `bun run release:rehearse`. It
+synthesizes the stable tag event, rejects unfinished release metadata, builds
+once, packs without lifecycle scripts, lints and consumes that exact tarball,
+and applies `npm publish --dry-run` to the same file.
 
-The first npm publication requires a maintainer-authenticated, 2FA-protected
-bootstrap because a trusted publisher cannot be attached before the package
-exists. Put a one-time granular publish token in the GitHub `npm` environment as
-`NPM_TOKEN`, then publish the stable `v<version>` GitHub release. After that
-workflow succeeds, configure `pythonstrup/bunject`, `release.yml`, environment
-`npm`, and `npm publish` as the package's trusted publisher, then delete the
-secret and revoke the token. Later releases use OIDC only. The workflow builds
-once and lints, consumes, and publishes the same archive without running
-lifecycle scripts during packing or publication.
+The maintainer npm account must have 2FA enabled. A trusted publisher cannot be
+attached before the package exists, so bootstrap once with a short-lived
+granular token that has package read/write access for `All Packages` (required
+to create the new unscoped package) and `Bypass 2FA` enabled. Store it in the
+GitHub `npm` environment as `NPM_TOKEN`, then publish the stable `v<version>`
+GitHub release.
+
+After that workflow succeeds, use an interactive 2FA-authenticated maintainer
+session with npm 11.18.0—not the bypass token—to configure and verify the exact
+trusted relationship:
+
+```sh
+npm trust github bunject --repository pythonstrup/bunject --file release.yml --environment npm --allow-publish
+npm trust list bunject
+```
+
+Delete the environment secret, revoke the token, and remove the workflow
+fallback plus its harness requirement so later releases fail closed on OIDC.
+The workflow builds once and lints, consumes, and publishes the same archive
+without running lifecycle scripts during packing or publication.

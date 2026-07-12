@@ -124,6 +124,6 @@ jobs:
           bun run scripts/package-smoke.ts bunject.tgz
       - name: Publish exact release artifact
         env:
-          # First-release fallback; remove NPM_TOKEN after trusted publishing is configured.
+          # First-publish fallback; remove this block after trusted publishing is verified.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish ./bunject.tgz --ignore-scripts --provenance --access public

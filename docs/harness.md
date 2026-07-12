@@ -36,7 +36,9 @@ signals are:
 - package-lint, aggregate emitted-declaration hash, and aggregate emitted
   JavaScript/declaration compressed-size gates;
 - an exact-tarball release rehearsal that builds once, lints and consumes the
-  archive, then applies lifecycle-free `npm publish --dry-run` to the same file;
+  archive, then applies lifecycle-free `npm publish --dry-run` to the same file
+  with the release workflow's pinned npm after strict stable-tag and
+  dated-changelog validation;
 - isolated Bunject benchmarks plus informational peer context for performance
   evidence;
 - `harness:check` for repository maps, links, TypeScript-checker coverage, and

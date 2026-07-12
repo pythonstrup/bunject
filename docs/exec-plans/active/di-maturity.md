@@ -154,7 +154,8 @@ Ecosystem adoption and battle-testing remain external evidence.
 ## Remaining work
 
 - Remove the `NPM_TOKEN` fallback and its harness expectation after the first
-  publish, trusted-publisher verification, secret deletion, and token revocation.
+  publish, trusted-publisher verification, secret deletion, and token revocation
+  so later releases fail closed instead of falling back to token authentication.
 - Add token-level observers only after a concrete instrumentation consumer
   defines cache-hit, hierarchy, async, cardinality, and removal semantics.
 - Compare declarations against the previous published tarball after the first
@@ -176,13 +177,16 @@ Ecosystem adoption and battle-testing remain external evidence.
   runtime audits after one-off construction; no reproducible local P0-P2 or
   required DI API gap remained, leaving first npm publication as the only P0.
 - 2026-07-12: enabled GitHub private vulnerability reporting and provisioned
-  the release workflow's `npm` environment without speculative approval or
-  branch restrictions.
-- 2026-07-12: added a dependency-free `release:rehearse` command that builds
-  once, checks metadata, packs without lifecycle scripts, lints and consumes the
-  exact archive, then validates its npm dry-run identity, integrity, file count,
-  and SHA-256. The release publish step now also suppresses lifecycle scripts
-  and exposes only a documented one-time bootstrap-secret fallback.
+  the release workflow's `npm` environment; approval and branch policies remain
+  unset until the maintainer chooses an operating policy.
+- 2026-07-12: added `release:rehearse` without a new project dependency; it
+  builds once after strict synthetic release-event validation, packs without
+  lifecycle scripts, lints and consumes the exact archive, then validates its
+  npm dry-run identity, integrity, file count, and SHA-256 through the release
+  workflow's pinned npm 11.18.0. Its npm cache is isolated from user state. The
+  release publish step now also suppresses lifecycle scripts and exposes only a
+  documented one-time bootstrap-secret fallback that must be removed after
+  trusted-publisher verification.
 - 2026-07-11: established the Git baseline and production kernel gates.
 - 2026-07-11: fixed concurrent construction/disposal/mutation correctness gaps.
 - 2026-07-11: began established-container parity and agent-harness work.
