@@ -26,5 +26,8 @@ coverage/
 .idea/
 .vscode/
 
+# Claude Code (local-only settings)
+.claude/settings.local.json
+
 # OS
 .DS_Store

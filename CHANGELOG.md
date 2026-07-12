@@ -39,8 +39,9 @@ This project follows [Semantic Versioning](https://semver.org/).
   inferred or explicit `defineProvider()` declarations, self-registration, and
   reusable provider registration; the type boundary matches callable-`.then`
   runtime detection.
-- Versioned agent map, architecture, execution plan, and mechanical repository
-  harness based on repository-local, agent-readable feedback, plus a public API
+- Versioned agent map, thin Claude Code adapter, architecture, execution plan,
+  and mechanical repository harness based on repository-local, agent-readable
+  feedback, plus a public API
   reference, knowledge reachability, reference/anchor and packed-document link
   validation, and compatibility-gated exact-tarball OIDC publication.
 - Explicit public facade plus focused type, dependency, provider, error, and

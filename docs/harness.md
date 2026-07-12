@@ -6,7 +6,11 @@ principles to a library rather than an interactive application.
 
 ## Readable state
 
-`AGENTS.md` is a short map. Architecture, maturity criteria, execution state,
+`AGENTS.md` is a short map. `CLAUDE.md` is a thin Claude Code adapter that
+imports that map, so Codex and Claude Code read one agent-neutral source of
+truth. The checked-in Claude settings allow only repository feedback and
+read-only Git commands; machine-local overrides stay ignored. Architecture,
+maturity criteria, execution state,
 support policy, and examples live in focused versioned documents under `docs/`.
 An agent should not need chat history or an external document to understand the
 current design constraints and unfinished work.

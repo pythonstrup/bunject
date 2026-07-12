@@ -13,6 +13,8 @@ changing behavior.
 - [Maturity criteria](./docs/maturity.md): feature and engineering gates.
 - [Harness](./docs/harness.md): the agent feedback loop and mechanical checks.
 - [Contributing](./CONTRIBUTING.md): the human change and evidence workflow.
+- [Claude Code adapter](./CLAUDE.md): imports this map for Claude Code; the
+  map itself stays agent-neutral.
 
 ## Repository map
 
@@ -27,6 +29,7 @@ changing behavior.
 - `bench/`: Bunject and peer microbenchmarks; evidence, not a fastest claim.
 - `.github/workflows/`: configured CI and trusted-publishing release flow.
 - `.github/ISSUE_TEMPLATE/bug.yml`: structured runtime bug evidence.
+- `.claude/settings.json`: scoped Claude Code feedback-command permissions.
 
 Only the package root is public. Source and emitted internal module paths are
 implementation details and must not become package subpath exports.

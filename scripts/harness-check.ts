@@ -23,7 +23,9 @@ const sourceModules = [
   "src/container.ts",
 ] as const;
 const requiredFiles = [
+  ".claude/settings.json",
   "AGENTS.md",
+  "CLAUDE.md",
   "ARCHITECTURE.md",
   "CONTRIBUTING.md",
   "README.md",
@@ -94,10 +96,38 @@ for (const target of [
   "ARCHITECTURE.md",
   "docs/index.md",
   "docs/exec-plans/README.md",
+  "CLAUDE.md",
 ]) {
   if (!agentMap.includes(target)) {
     failures.push(`AGENTS.md must point to ${target}.`);
   }
+}
+
+const claudeAdapter = await readFile(join(root, "CLAUDE.md"), "utf8");
+if (claudeAdapter.split("\n").length > 20) {
+  failures.push("CLAUDE.md must stay a thin adapter of at most 20 lines.");
+}
+if (!/^@AGENTS\.md$/m.test(claudeAdapter)) {
+  failures.push(
+    "CLAUDE.md must import the shared map with a line reading `@AGENTS.md`.",
+  );
+}
+const claudeSettings = JSON.parse(
+  await readFile(join(root, ".claude/settings.json"), "utf8"),
+) as { permissions?: { allow?: unknown } };
+const expectedClaudeCommands = [
+  "Bash(bun test:*)",
+  "Bash(bun run:*)",
+  "Bash(bun ci)",
+  "Bash(git status:*)",
+  "Bash(git diff:*)",
+  "Bash(git log:*)",
+];
+if (
+  JSON.stringify(claudeSettings.permissions?.allow) !==
+  JSON.stringify(expectedClaudeCommands)
+) {
+  failures.push("Claude Code permissions must match the reviewed feedback allowlist.");
 }
 
 const packageJson = JSON.parse(
