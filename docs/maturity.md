@@ -77,7 +77,7 @@ outside the supported package API.
 - [x] Pinned TypeScript 5.4 and current TypeScript source and packed-consumer checks
 - [x] Minimum Bun 1.3.10 and latest Bun jobs
 - [x] Minimum Bun npm-packed sync/async consumer smoke
-- [x] Local Bun 1.3.10 type, 203-test, and packed-consumer verification
+- [x] Local Bun 1.3.10 type, 214-test, and packed-consumer verification
 - [x] Packed tarball install plus isolated NodeNext, Bun, Node, declaration,
   and packaged-document link smoke
 - [x] Release publication lints and consumes the exact tarball passed to npm
@@ -85,8 +85,9 @@ outside the supported package API.
   gates configured
 - [x] Node 22/24/26 runtime matrix configured
 - [x] Node matrix exercises async context, scope, coalescing, paths, and disposal
-- [x] Packed Bun/Node smoke exercises inactive nested context and independent
-  container-family isolation without deadlock
+- [x] Packed Bun/Node smoke exercises inactive nested context, independent
+  container-family isolation, and mixed resolution/disposal cycles across
+  coalesced provider sessions without deadlock
 - [x] Windows packed-consumer job configured
 - [x] Package lint and exported-type resolution checks
 - [x] Scope/disposal ownership and scheduler stress coverage

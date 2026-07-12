@@ -51,6 +51,7 @@ export type CacheEntry =
       readonly state: "pending";
       readonly promise: Promise<unknown>;
       readonly producer: Construction;
+      readonly session: ResolutionSession;
       readonly dynamicDependencies: RuntimeDependencies;
     };
 
@@ -607,8 +608,14 @@ export function waitForConstruction(
   current: Construction | undefined,
   producer: Construction,
   promise: Promise<unknown>,
+  beforeWait?: () => (() => void) | undefined,
 ): Promise<unknown> {
-  return waitForConstructionStart(current, producer, () => promise);
+  return waitForConstructionStart(
+    current,
+    producer,
+    () => promise,
+    beforeWait,
+  );
 }
 
 /** @internal */
@@ -616,36 +623,43 @@ export function waitForConstructionStart<T>(
   current: Construction | undefined,
   producer: Construction,
   start: () => Promise<T>,
+  beforeWait?: () => (() => void) | undefined,
 ): Promise<T> {
-  if (!current) return start();
-
-  const waitPath = findConstructionPath(producer, current, new Set());
-  if (waitPath) {
-    const cycle = [current.token, ...waitPath.map((item) => item.token)];
-    throw resolutionError(
-      "CIRCULAR",
-      `Circular dependency detected: ${formatPath(cycle)}.`,
-      [...current.path, ...waitPath.map((item) => item.token)],
-      undefined,
-      cycle,
-    );
+  if (current) {
+    const waitPath = findConstructionPath(producer, current, new Set());
+    if (waitPath) {
+      const cycle = [current.token, ...waitPath.map((item) => item.token)];
+      throw resolutionError(
+        "CIRCULAR",
+        `Circular dependency detected: ${formatPath(cycle)}.`,
+        [...current.path, ...waitPath.map((item) => item.token)],
+        undefined,
+        cycle,
+      );
+    }
   }
 
-  current.waits.set(producer, (current.waits.get(producer) ?? 0) + 1);
+  // Cross-graph preflight must succeed before this construction edge is visible.
+  const cleanupWait = beforeWait?.();
+  if (current) {
+    current.waits.set(producer, (current.waits.get(producer) ?? 0) + 1);
+  }
+  const cleanup = () => {
+    if (current) {
+      const remaining = (current.waits.get(producer) ?? 1) - 1;
+      if (remaining === 0) current.waits.delete(producer);
+      else current.waits.set(producer, remaining);
+    }
+    cleanupWait?.();
+  };
   let promise: Promise<T>;
   try {
     promise = start();
   } catch (error) {
-    const remaining = (current.waits.get(producer) ?? 1) - 1;
-    if (remaining === 0) current.waits.delete(producer);
-    else current.waits.set(producer, remaining);
+    cleanup();
     throw error;
   }
-  return promise.finally(() => {
-    const remaining = (current.waits.get(producer) ?? 1) - 1;
-    if (remaining === 0) current.waits.delete(producer);
-    else current.waits.set(producer, remaining);
-  });
+  return current || cleanupWait ? promise.finally(cleanup) : promise;
 }
 
 function findConstructionPath(

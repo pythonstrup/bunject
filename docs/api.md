@@ -457,6 +457,13 @@ reported together as `AggregateError`.
 | `dispose()` / `[Symbol.dispose]()` | Synchronous cleanup. Preflights the container tree and refuses an in-flight or async-only tree before cleanup starts. |
 | `disposeAsync()` / `[Symbol.asyncDispose]()` | Waits for in-flight resolution, then performs async cleanup. Concurrent calls share the disposal operation. |
 
+A `disposeAsync()` call made while a provider is active is treated as causal
+lifecycle work whether or not its returned Promise is observed. Providers
+should await it. Fire-and-forget shutdown is supported only when started after
+provider activation, for example by the application's lifecycle coordinator.
+Provider-derived wait edges are removed once the disposing tree has drained its
+in-flight provider work.
+
 Children are disposed before parents. Owned resources within each container
 are disposed in reverse acquisition order. Cleanup continues after individual
 failures and throws one `AggregateError` after the remaining work completes.

@@ -65,3 +65,11 @@ This project follows [Semantic Versioning](https://semver.org/).
 - Independently created container families are isolated during provider
   activation: resolution, query, validation, and inspection reject the first
   cross-family lookup before construction or provider disclosure.
+- Async disposal now preserves every active provider operation across causal
+  context frames and live coalesced resolution sessions. Inactive frames,
+  ancestor-owned providers, scope/owner mismatches, and every ordering between
+  provider waits, coalescing, and disposal startup can no longer hide a mixed
+  resolution/disposal cycle. Construction and disposal edges are installed
+  atomically so a rejected join cannot leave a false construction cycle;
+  provider-derived edges are retired after in-flight work drains so they cannot
+  create a later false disposal cycle.

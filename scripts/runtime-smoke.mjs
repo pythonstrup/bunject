@@ -133,6 +133,63 @@ export async function runRuntimeSmoke(bunject) {
     "Inactive nested context cycle",
   );
 
+  const DISPOSAL_PROVIDER = token("DISPOSAL_PROVIDER");
+  const DISPOSAL_RESOURCE = token("DISPOSAL_RESOURCE");
+  const disposerStarted = Promise.withResolvers();
+  const providerStarted = Promise.withResolvers();
+  const waitingOnDisposal = Promise.withResolvers();
+  const callDisposal = Promise.withResolvers();
+  const callConsumer = Promise.withResolvers();
+  const disposalParent = new Container();
+  const disposalProducer = disposalParent.createScope();
+  const disposalConsumer = disposalParent.createScope();
+  const disposalSecond = new Container();
+  disposalSecond.register(DISPOSAL_RESOURCE, {
+    useFactory: () => ({
+      async [Symbol.asyncDispose]() {
+        disposerStarted.resolve();
+        await callConsumer.promise;
+        await disposalConsumer.disposeAsync();
+      },
+    }),
+  });
+  disposalSecond.resolve(DISPOSAL_RESOURCE);
+  const secondDisposal = disposalSecond.disposeAsync();
+  await disposerStarted.promise;
+  disposalParent.register(DISPOSAL_PROVIDER, {
+    scope: "singleton",
+    useFactoryAsync: async () => {
+      providerStarted.resolve();
+      await callDisposal.promise;
+      const waiting = disposalSecond.disposeAsync();
+      waitingOnDisposal.resolve();
+      await waiting;
+      return {};
+    },
+  });
+  const disposalProvider = disposalProducer.resolveAsync(DISPOSAL_PROVIDER);
+  await providerStarted.promise;
+  const coalescedProvider = disposalConsumer.resolveAsync(DISPOSAL_PROVIDER);
+  await Promise.resolve();
+  const childDisposal = disposalConsumer.disposeAsync();
+  callDisposal.resolve();
+  await waitingOnDisposal.promise;
+  callConsumer.resolve();
+  const disposalResults = await settleWithin(
+    Promise.allSettled([
+      disposalProvider,
+      coalescedProvider,
+      childDisposal,
+      secondDisposal,
+    ]),
+    "Backfilled disposal cycle",
+  );
+  if (disposalResults.map(({ status }) => status).join(",") !==
+    "rejected,rejected,fulfilled,rejected") {
+    throw new Error("Backfilled disposal cycle was not rejected");
+  }
+  await disposalParent.disposeAsync();
+
   const container = new Container();
   container.register(VALUE, { useValue: 42 });
   container.register(RESOLUTION_VALUE, {

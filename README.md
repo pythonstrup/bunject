@@ -276,6 +276,12 @@ When providers return the same object, the first captured ownership contract
 wins. A value whose activation hook fails is not cached, but remains owned and
 is cleaned when its activation container is disposed.
 
+Calling `disposeAsync()` while a provider is active participates in that
+provider's causal lifecycle graph, even if the returned Promise is ignored.
+Await the call. Fire-and-forget shutdown must be started by an application
+lifecycle coordinator after provider activation has completed. The conservative
+edge is removed after the disposing tree drains its in-flight provider work.
+
 ## Modules, inspection, and controlled mutation
 
 ```ts

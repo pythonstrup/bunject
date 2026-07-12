@@ -1000,6 +1000,743 @@ describe("container disposal", () => {
     expect(second.disposed).toBe(true);
   });
 
+  test("detects mixed disposal cycles through an inactive nested context", async () => {
+    const PROVIDER = token<object>("PROVIDER");
+    const BRIDGE = token<{ readonly pending: Promise<void> }>("BRIDGE");
+    const RESOURCE = token<AsyncDisposable>("RESOURCE");
+    const startBridge = Promise.withResolvers<void>();
+    const startDisposer = Promise.withResolvers<void>();
+    const bridgeCreated = Promise.withResolvers<void>();
+    const waitingOnSecond = Promise.withResolvers<void>();
+    const first = new Container();
+    const second = new Container();
+
+    second.register(RESOURCE, {
+      useFactory: () => ({
+        async [Symbol.asyncDispose]() {
+          await startDisposer.promise;
+          await first.disposeAsync();
+        },
+      }),
+    });
+    second.resolve(RESOURCE);
+    const secondDisposal = second.disposeAsync();
+
+    first.register(BRIDGE, {
+      useFactory: () => {
+        bridgeCreated.resolve();
+        return {
+          pending: startBridge.promise.then(() => {
+            const waiting = second.disposeAsync();
+            waitingOnSecond.resolve();
+            return waiting;
+          }),
+        };
+      },
+    });
+    first.register(PROVIDER, {
+      useFactoryAsync: async () => {
+        await first.resolve(BRIDGE).pending;
+        return {};
+      },
+    });
+
+    const provider = first.resolveAsync(PROVIDER);
+    await bridgeCreated.promise;
+    const firstDisposal = first.disposeAsync();
+    startBridge.resolve();
+    await waitingOnSecond.promise;
+    startDisposer.resolve();
+
+    const outcome = await Promise.race([
+      Promise.allSettled([provider, firstDisposal, secondDisposal]),
+      Bun.sleep(100).then(() => "timeout" as const),
+    ]);
+
+    if (outcome === "timeout") throw new Error("disposal cycle timed out");
+    expect(outcome.map((result) => result.status)).toEqual([
+      "rejected",
+      "fulfilled",
+      "rejected",
+    ]);
+    expect(first.disposed).toBe(true);
+    expect(second.disposed).toBe(true);
+  });
+
+  test("detects mixed disposal cycles through an active ancestor provider", async () => {
+    const OUTER = token<object>("OUTER");
+    const ANCESTOR = token<object>("ANCESTOR");
+    const RESOURCE = token<AsyncDisposable>("RESOURCE");
+    const startOuter = Promise.withResolvers<void>();
+    const outerStarted = Promise.withResolvers<void>();
+    const waitingOnSecond = Promise.withResolvers<void>();
+    const startDisposer = Promise.withResolvers<void>();
+    const parent = new Container();
+    const child = parent.createScope();
+    const second = new Container();
+
+    second.register(RESOURCE, {
+      useFactory: () => ({
+        async [Symbol.asyncDispose]() {
+          await startDisposer.promise;
+          await child.disposeAsync();
+        },
+      }),
+    });
+    second.resolve(RESOURCE);
+    const secondDisposal = second.disposeAsync();
+
+    parent.register(ANCESTOR, {
+      useFactoryAsync: async () => {
+        const waiting = second.disposeAsync();
+        waitingOnSecond.resolve();
+        await waiting;
+        return {};
+      },
+    });
+    child.register(OUTER, {
+      useFactoryAsync: async () => {
+        outerStarted.resolve();
+        await startOuter.promise;
+        await parent.resolveAsync(ANCESTOR);
+        return {};
+      },
+    });
+
+    const provider = child.resolveAsync(OUTER);
+    await outerStarted.promise;
+    const childDisposal = child.disposeAsync();
+    startOuter.resolve();
+    await waitingOnSecond.promise;
+    startDisposer.resolve();
+
+    const outcome = await Promise.race([
+      Promise.allSettled([provider, childDisposal, secondDisposal]),
+      Bun.sleep(100).then(() => "timeout" as const),
+    ]);
+
+    if (outcome === "timeout") throw new Error("disposal cycle timed out");
+    expect(outcome.map(({ status }) => status)).toEqual([
+      "rejected",
+      "fulfilled",
+      "rejected",
+    ]);
+    expect(child.disposed).toBe(true);
+    expect(second.disposed).toBe(true);
+    await parent.disposeAsync();
+  });
+
+  test("backfills provider disposal waits when its owner starts disposing later", async () => {
+    const PROVIDER = token<object>("PROVIDER");
+    const RESOURCE = token<AsyncDisposable>("RESOURCE");
+    const disposerStarted = Promise.withResolvers<void>();
+    const waitingOnSecond = Promise.withResolvers<void>();
+    const startDisposer = Promise.withResolvers<void>();
+    const first = new Container();
+    const second = new Container();
+
+    second.register(RESOURCE, {
+      useFactory: () => ({
+        async [Symbol.asyncDispose]() {
+          disposerStarted.resolve();
+          await startDisposer.promise;
+          await first.disposeAsync();
+        },
+      }),
+    });
+    second.resolve(RESOURCE);
+    const secondDisposal = second.disposeAsync();
+    await disposerStarted.promise;
+
+    first.register(PROVIDER, {
+      useFactoryAsync: async () => {
+        const waiting = second.disposeAsync();
+        waitingOnSecond.resolve();
+        await waiting;
+        return {};
+      },
+    });
+    const provider = first.resolveAsync(PROVIDER);
+    await waitingOnSecond.promise;
+    const firstDisposal = first.disposeAsync();
+    startDisposer.resolve();
+
+    const outcome = await Promise.race([
+      Promise.allSettled([provider, firstDisposal, secondDisposal]),
+      Bun.sleep(100).then(() => "timeout" as const),
+    ]);
+
+    if (outcome === "timeout") throw new Error("disposal cycle timed out");
+    expect(outcome.map(({ status }) => status)).toEqual([
+      "rejected",
+      "fulfilled",
+      "rejected",
+    ]);
+    expect(first.disposed).toBe(true);
+    expect(second.disposed).toBe(true);
+  });
+
+  test("treats provider disposal calls as causal when their promise is ignored", async () => {
+    const PROVIDER = token<object>("PROVIDER");
+    const RESOURCE = token<AsyncDisposable>("RESOURCE");
+    const disposerStarted = Promise.withResolvers<void>();
+    const providerCalled = Promise.withResolvers<void>();
+    const callFirst = Promise.withResolvers<void>();
+    const finishProvider = Promise.withResolvers<void>();
+    const first = new Container();
+    const second = new Container();
+
+    second.register(RESOURCE, {
+      useFactory: () => ({
+        async [Symbol.asyncDispose]() {
+          disposerStarted.resolve();
+          await callFirst.promise;
+          await first.disposeAsync();
+        },
+      }),
+    });
+    second.resolve(RESOURCE);
+    const secondDisposal = second.disposeAsync();
+    await disposerStarted.promise;
+
+    first.register(PROVIDER, {
+      useFactoryAsync: async () => {
+        void second.disposeAsync();
+        providerCalled.resolve();
+        await finishProvider.promise;
+        return {};
+      },
+    });
+    const provider = first.resolveAsync(PROVIDER);
+    await providerCalled.promise;
+    const firstDisposal = first.disposeAsync();
+    callFirst.resolve();
+    await Promise.resolve();
+    finishProvider.resolve();
+
+    const outcome = await Promise.race([
+      Promise.allSettled([provider, firstDisposal, secondDisposal]),
+      Bun.sleep(100).then(() => "timeout" as const),
+    ]);
+
+    if (outcome === "timeout") throw new Error("disposal cycle timed out");
+    expect(outcome.map(({ status }) => status)).toEqual([
+      "fulfilled",
+      "fulfilled",
+      "rejected",
+    ]);
+    expect(first.disposed).toBe(true);
+    expect(second.disposed).toBe(true);
+  });
+
+  test("removes provider disposal edges after in-flight work drains", async () => {
+    const PROVIDER = token<object>("PROVIDER");
+    const FIRST_RESOURCE = token<AsyncDisposable>("FIRST_RESOURCE");
+    const SECOND_RESOURCE = token<AsyncDisposable>("SECOND_RESOURCE");
+    const secondDisposerStarted = Promise.withResolvers<void>();
+    const providerCalled = Promise.withResolvers<void>();
+    const finishProvider = Promise.withResolvers<void>();
+    const firstDisposerStarted = Promise.withResolvers<void>();
+    const callFirst = Promise.withResolvers<void>();
+    const secondWaitingOnFirst = Promise.withResolvers<void>();
+    const finishFirstDisposer = Promise.withResolvers<void>();
+    const first = new Container();
+    const second = new Container();
+
+    second.register(SECOND_RESOURCE, {
+      useFactory: () => ({
+        async [Symbol.asyncDispose]() {
+          secondDisposerStarted.resolve();
+          await callFirst.promise;
+          const waiting = first.disposeAsync();
+          secondWaitingOnFirst.resolve();
+          await waiting;
+        },
+      }),
+    });
+    second.resolve(SECOND_RESOURCE);
+    const secondDisposal = second.disposeAsync();
+    await secondDisposerStarted.promise;
+
+    first.register(FIRST_RESOURCE, {
+      useFactory: () => ({
+        async [Symbol.asyncDispose]() {
+          firstDisposerStarted.resolve();
+          await finishFirstDisposer.promise;
+        },
+      }),
+    });
+    first.register(PROVIDER, {
+      useFactoryAsync: async () => {
+        void second.disposeAsync();
+        providerCalled.resolve();
+        await finishProvider.promise;
+        return {};
+      },
+    });
+    first.resolve(FIRST_RESOURCE);
+    const provider = first.resolveAsync(PROVIDER);
+    await providerCalled.promise;
+    const firstDisposal = first.disposeAsync();
+    finishProvider.resolve();
+    await firstDisposerStarted.promise;
+    callFirst.resolve();
+    await secondWaitingOnFirst.promise;
+    finishFirstDisposer.resolve();
+
+    const outcome = await Promise.race([
+      Promise.allSettled([provider, firstDisposal, secondDisposal]),
+      Bun.sleep(100).then(() => "timeout" as const),
+    ]);
+
+    if (outcome === "timeout") throw new Error("disposal cycle timed out");
+    expect(outcome.map(({ status }) => status)).toEqual([
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+    ]);
+    expect(first.disposed).toBe(true);
+    expect(second.disposed).toBe(true);
+  });
+
+  test("backfills waits to the child whose in-flight resolution owns a parent provider", async () => {
+    const PROVIDER = token<object>("PROVIDER");
+    const RESOURCE = token<AsyncDisposable>("RESOURCE");
+    const disposerStarted = Promise.withResolvers<void>();
+    const waitingOnSecond = Promise.withResolvers<void>();
+    const startDisposer = Promise.withResolvers<void>();
+    const parent = new Container();
+    const child = parent.createScope();
+    const second = new Container();
+
+    second.register(RESOURCE, {
+      useFactory: () => ({
+        async [Symbol.asyncDispose]() {
+          disposerStarted.resolve();
+          await startDisposer.promise;
+          await child.disposeAsync();
+        },
+      }),
+    });
+    second.resolve(RESOURCE);
+    const secondDisposal = second.disposeAsync();
+    await disposerStarted.promise;
+
+    parent.register(PROVIDER, {
+      useFactoryAsync: async () => {
+        const waiting = second.disposeAsync();
+        waitingOnSecond.resolve();
+        await waiting;
+        return {};
+      },
+    });
+    const provider = child.resolveAsync(PROVIDER);
+    await waitingOnSecond.promise;
+    const childDisposal = child.disposeAsync();
+    startDisposer.resolve();
+
+    const outcome = await Promise.race([
+      Promise.allSettled([provider, childDisposal, secondDisposal]),
+      Bun.sleep(100).then(() => "timeout" as const),
+    ]);
+
+    if (outcome === "timeout") throw new Error("disposal cycle timed out");
+    expect(outcome.map(({ status }) => status)).toEqual([
+      "rejected",
+      "fulfilled",
+      "rejected",
+    ]);
+    expect(parent.disposed).toBe(false);
+    expect(child.disposed).toBe(true);
+    expect(second.disposed).toBe(true);
+    await parent.disposeAsync();
+  });
+
+  test("backfills waits through a coalesced construction from another session", async () => {
+    const SINGLETON = token<object>("SINGLETON");
+    const RESOURCE = token<AsyncDisposable>("RESOURCE");
+    const disposerStarted = Promise.withResolvers<void>();
+    const waitingOnSecond = Promise.withResolvers<void>();
+    const startDisposer = Promise.withResolvers<void>();
+    const parent = new Container();
+    const first = parent.createScope();
+    const second = parent.createScope();
+    const disposalTarget = new Container();
+
+    disposalTarget.register(RESOURCE, {
+      useFactory: () => ({
+        async [Symbol.asyncDispose]() {
+          disposerStarted.resolve();
+          await startDisposer.promise;
+          await second.disposeAsync();
+        },
+      }),
+    });
+    disposalTarget.resolve(RESOURCE);
+    const targetDisposal = disposalTarget.disposeAsync();
+    await disposerStarted.promise;
+
+    parent.register(SINGLETON, {
+      scope: "singleton",
+      useFactoryAsync: async () => {
+        const waiting = disposalTarget.disposeAsync();
+        waitingOnSecond.resolve();
+        await waiting;
+        return {};
+      },
+    });
+    const producer = first.resolveAsync(SINGLETON);
+    await waitingOnSecond.promise;
+    const coalesced = second.resolveAsync(SINGLETON);
+    const secondDisposal = second.disposeAsync();
+    startDisposer.resolve();
+
+    const outcome = await Promise.race([
+      Promise.allSettled([
+        producer,
+        coalesced,
+        secondDisposal,
+        targetDisposal,
+      ]),
+      Bun.sleep(100).then(() => "timeout" as const),
+    ]);
+
+    if (outcome === "timeout") throw new Error("disposal cycle timed out");
+    expect(outcome.map(({ status }) => status)).toEqual([
+      "rejected",
+      "rejected",
+      "fulfilled",
+      "rejected",
+    ]);
+    expect(first.disposed).toBe(false);
+    expect(second.disposed).toBe(true);
+    expect(disposalTarget.disposed).toBe(true);
+    await parent.disposeAsync();
+  });
+
+  test("propagates later disposal waits to a coalesced session already disposing", async () => {
+    const SINGLETON = token<object>("SINGLETON");
+    const RESOURCE = token<AsyncDisposable>("RESOURCE");
+    const disposerStarted = Promise.withResolvers<void>();
+    const providerStarted = Promise.withResolvers<void>();
+    const providerWaiting = Promise.withResolvers<void>();
+    const callTarget = Promise.withResolvers<void>();
+    const callChild = Promise.withResolvers<void>();
+    const parent = new Container();
+    const first = parent.createScope();
+    const second = parent.createScope();
+    const disposalTarget = new Container();
+
+    disposalTarget.register(RESOURCE, {
+      useFactory: () => ({
+        async [Symbol.asyncDispose]() {
+          disposerStarted.resolve();
+          await callChild.promise;
+          await second.disposeAsync();
+        },
+      }),
+    });
+    disposalTarget.resolve(RESOURCE);
+    const targetDisposal = disposalTarget.disposeAsync();
+    await disposerStarted.promise;
+
+    parent.register(SINGLETON, {
+      scope: "singleton",
+      useFactoryAsync: async () => {
+        providerStarted.resolve();
+        await callTarget.promise;
+        const waiting = disposalTarget.disposeAsync();
+        providerWaiting.resolve();
+        await waiting;
+        return {};
+      },
+    });
+    const producer = first.resolveAsync(SINGLETON);
+    await providerStarted.promise;
+    const coalesced = second.resolveAsync(SINGLETON);
+    await Promise.resolve();
+    const secondDisposal = second.disposeAsync();
+    callTarget.resolve();
+    await providerWaiting.promise;
+    callChild.resolve();
+
+    const outcome = await Promise.race([
+      Promise.allSettled([
+        producer,
+        coalesced,
+        secondDisposal,
+        targetDisposal,
+      ]),
+      Bun.sleep(100).then(() => "timeout" as const),
+    ]);
+
+    if (outcome === "timeout") throw new Error("disposal cycle timed out");
+    expect(outcome.map(({ status }) => status)).toEqual([
+      "rejected",
+      "rejected",
+      "fulfilled",
+      "rejected",
+    ]);
+    expect(first.disposed).toBe(false);
+    expect(second.disposed).toBe(true);
+    expect(disposalTarget.disposed).toBe(true);
+    await parent.disposeAsync();
+  });
+
+  test("propagates existing waits when a disposing session coalesces later", async () => {
+    const ROOT = token<object>("ROOT");
+    const SINGLETON = token<object>("SINGLETON");
+    const RESOURCE = token<AsyncDisposable>("RESOURCE");
+    const disposerStarted = Promise.withResolvers<void>();
+    const providerWaiting = Promise.withResolvers<void>();
+    const rootStarted = Promise.withResolvers<void>();
+    const joinSingleton = Promise.withResolvers<void>();
+    const joinedSingleton = Promise.withResolvers<void>();
+    const callChild = Promise.withResolvers<void>();
+    const parent = new Container();
+    const first = parent.createScope();
+    const second = parent.createScope();
+    const disposalTarget = new Container();
+
+    disposalTarget.register(RESOURCE, {
+      useFactory: () => ({
+        async [Symbol.asyncDispose]() {
+          disposerStarted.resolve();
+          await callChild.promise;
+          await second.disposeAsync();
+        },
+      }),
+    });
+    disposalTarget.resolve(RESOURCE);
+    const targetDisposal = disposalTarget.disposeAsync();
+    await disposerStarted.promise;
+
+    parent.register(SINGLETON, {
+      scope: "singleton",
+      useFactoryAsync: async () => {
+        const waiting = disposalTarget.disposeAsync();
+        providerWaiting.resolve();
+        await waiting;
+        return {};
+      },
+    });
+    second.register(ROOT, {
+      useFactoryAsync: async () => {
+        rootStarted.resolve();
+        await joinSingleton.promise;
+        const waiting = second.resolveAsync(SINGLETON);
+        joinedSingleton.resolve();
+        await waiting;
+        return {};
+      },
+    });
+    const producer = first.resolveAsync(SINGLETON);
+    await providerWaiting.promise;
+    const coalesced = second.resolveAsync(ROOT);
+    await rootStarted.promise;
+    const secondDisposal = second.disposeAsync();
+    joinSingleton.resolve();
+    await joinedSingleton.promise;
+    callChild.resolve();
+
+    const outcome = await Promise.race([
+      Promise.allSettled([
+        producer,
+        coalesced,
+        secondDisposal,
+        targetDisposal,
+      ]),
+      Bun.sleep(100).then(() => "timeout" as const),
+    ]);
+
+    if (outcome === "timeout") throw new Error("disposal cycle timed out");
+    expect(outcome.map(({ status }) => status)).toEqual([
+      "rejected",
+      "rejected",
+      "fulfilled",
+      "rejected",
+    ]);
+    expect(first.disposed).toBe(false);
+    expect(second.disposed).toBe(true);
+    expect(disposalTarget.disposed).toBe(true);
+    await parent.disposeAsync();
+  });
+
+  test("rejects a cycle introduced while a disposing session coalesces", async () => {
+    const ROOT = token<object>("ROOT");
+    const SINGLETON = token<object>("SINGLETON");
+    const RESOURCE = token<AsyncDisposable>("RESOURCE");
+    const disposerStarted = Promise.withResolvers<void>();
+    const providerWaiting = Promise.withResolvers<void>();
+    const rootStarted = Promise.withResolvers<void>();
+    const targetWaiting = Promise.withResolvers<void>();
+    const joinSingleton = Promise.withResolvers<void>();
+    const joinedSingleton = Promise.withResolvers<void>();
+    const callChild = Promise.withResolvers<void>();
+    const parent = new Container();
+    const first = parent.createScope();
+    const second = parent.createScope();
+    const disposalTarget = new Container();
+
+    disposalTarget.register(RESOURCE, {
+      useFactory: () => ({
+        async [Symbol.asyncDispose]() {
+          disposerStarted.resolve();
+          await callChild.promise;
+          const waiting = second.disposeAsync();
+          targetWaiting.resolve();
+          await waiting;
+        },
+      }),
+    });
+    disposalTarget.resolve(RESOURCE);
+    const targetDisposal = disposalTarget.disposeAsync();
+    await disposerStarted.promise;
+
+    parent.register(SINGLETON, {
+      scope: "singleton",
+      useFactoryAsync: async () => {
+        const waiting = disposalTarget.disposeAsync();
+        providerWaiting.resolve();
+        await waiting;
+        return {};
+      },
+    });
+    second.register(ROOT, {
+      useFactoryAsync: async () => {
+        rootStarted.resolve();
+        await joinSingleton.promise;
+        const waiting = second.resolveAsync(SINGLETON);
+        joinedSingleton.resolve();
+        await waiting;
+        return {};
+      },
+    });
+    const producer = first.resolveAsync(SINGLETON);
+    await providerWaiting.promise;
+    const coalesced = second.resolveAsync(ROOT);
+    await rootStarted.promise;
+    const secondDisposal = second.disposeAsync();
+    callChild.resolve();
+    await targetWaiting.promise;
+    joinSingleton.resolve();
+    await joinedSingleton.promise;
+
+    const outcome = await Promise.race([
+      Promise.allSettled([
+        producer,
+        coalesced,
+        secondDisposal,
+        targetDisposal,
+      ]),
+      Bun.sleep(100).then(() => "timeout" as const),
+    ]);
+
+    if (outcome === "timeout") throw new Error("disposal cycle timed out");
+    expect(outcome.map(({ status }) => status)).toEqual([
+      "fulfilled",
+      "rejected",
+      "fulfilled",
+      "fulfilled",
+    ]);
+    expect(first.disposed).toBe(false);
+    expect(second.disposed).toBe(true);
+    expect(disposalTarget.disposed).toBe(true);
+    await parent.disposeAsync();
+  });
+
+  test("rolls back construction waits when disposal-session linking is rejected", async () => {
+    const PRODUCER = token<object>("PRODUCER");
+    const ROOT = token<object>("ROOT");
+    const RESOURCE = token<AsyncDisposable>("RESOURCE");
+    const callChild = Promise.withResolvers<void>();
+    const targetWaitingOnChild = Promise.withResolvers<void>();
+    const joinProducer = Promise.withResolvers<void>();
+    const rootStarted = Promise.withResolvers<void>();
+    const joinRejected = Promise.withResolvers<unknown>();
+    const attemptRoot = Promise.withResolvers<void>();
+    const producerCalledTarget = Promise.withResolvers<void>();
+    const producerWaitingOnRoot = Promise.withResolvers<void>();
+    const finishRoot = Promise.withResolvers<void>();
+    const parent = new Container();
+    const producerScope = parent.createScope();
+    const consumer = parent.createScope();
+    const target = new Container();
+
+    target.register(RESOURCE, {
+      useFactory: () => ({
+        async [Symbol.asyncDispose]() {
+          await callChild.promise;
+          const waiting = consumer.disposeAsync();
+          targetWaitingOnChild.resolve();
+          await waiting;
+        },
+      }),
+    });
+    target.resolve(RESOURCE);
+    const targetDisposal = target.disposeAsync();
+
+    parent.register(PRODUCER, {
+      scope: "singleton",
+      useFactoryAsync: async () => {
+        const waitingOnTarget = target.disposeAsync();
+        producerCalledTarget.resolve();
+        await attemptRoot.promise;
+        const waitingOnRoot = parent.resolveAsync(ROOT);
+        producerWaitingOnRoot.resolve();
+        await waitingOnRoot;
+        await waitingOnTarget;
+        return {};
+      },
+    });
+    parent.register(ROOT, {
+      scope: "singleton",
+      useFactoryAsync: async () => {
+        rootStarted.resolve();
+        await joinProducer.promise;
+        try {
+          await parent.resolveAsync(PRODUCER);
+        } catch (error) {
+          joinRejected.resolve(error);
+        }
+        await finishRoot.promise;
+        return {};
+      },
+    });
+
+    const producer = producerScope.resolveAsync(PRODUCER);
+    await producerCalledTarget.promise;
+    const root = consumer.resolveAsync(ROOT);
+    await rootStarted.promise;
+    const consumerDisposal = consumer.disposeAsync();
+    callChild.resolve();
+    await targetWaitingOnChild.promise;
+    joinProducer.resolve();
+    await expect(joinRejected.promise).resolves.toBeInstanceOf(TypeError);
+    attemptRoot.resolve();
+    await producerWaitingOnRoot.promise;
+    finishRoot.resolve();
+
+    const outcome = await Promise.race([
+      Promise.allSettled([
+        producer,
+        root,
+        consumerDisposal,
+        targetDisposal,
+      ]),
+      Bun.sleep(100).then(() => "timeout" as const),
+    ]);
+
+    if (outcome === "timeout") throw new Error("disposal cycle timed out");
+    expect(outcome.map(({ status }) => status)).toEqual([
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+    ]);
+    await parent.disposeAsync();
+  });
+
   test("aggregates sync disposal failures after attempting every resource", () => {
     const FIRST = token<Disposable>("FIRST");
     const SECOND = token<Disposable>("SECOND");

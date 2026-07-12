@@ -106,6 +106,7 @@ type LifecycleState = "active" | "disposing-async" | "disposed";
 interface DisposalOperation {
   readonly owned: Set<Container>;
   readonly waits: Set<DisposalOperation>;
+  readonly providerWaits: Set<DisposalOperation>;
   readonly nodeWaits: Map<Container, Set<Container>>;
   readonly errors: unknown[];
   readonly tasks: Map<Container, Promise<void>>;
@@ -125,6 +126,24 @@ interface SyncDisposalOperation {
 }
 
 const disposalContext = new AsyncLocalStorage<DisposalExecutionContext>();
+// Live causal graph joining coalesced resolution sessions to disposal waits.
+const providerDisposalTargets = new WeakMap<
+  ResolutionSession,
+  Set<DisposalOperation>
+>();
+const sessionDependencies = new WeakMap<
+  ResolutionSession,
+  Map<ResolutionSession, number>
+>();
+const sessionDependents = new WeakMap<
+  ResolutionSession,
+  Map<ResolutionSession, number>
+>();
+const inFlightSessionContainers = new WeakMap<
+  ResolutionSession,
+  Set<Container>
+>();
+const containerDisposals = new WeakMap<Container, DisposalOperation>();
 const noLifetimeCaptors: readonly LifetimeCaptor[] = Object.freeze([]);
 
 /** Registration and ownership domain that may inherit from a parent container. */
@@ -150,6 +169,7 @@ export class Container implements Disposable, AsyncDisposable {
   readonly #owned: OwnedResource[] = [];
   readonly #ownedValues = new WeakSet<object>();
   readonly #inFlight = new Set<Promise<unknown>>();
+  readonly #inFlightSessions = new Map<ResolutionSession, number>();
   #parent: Container | undefined;
   #family: ContainerFamily = { mutating: false };
   #activeResolutions = 0;
@@ -689,6 +709,7 @@ export class Container implements Disposable, AsyncDisposable {
     const session = context?.session ?? createResolutionSession();
     const ancestry = this.#resolutionAncestry(context, token);
     const locked = this.#beginResolution();
+    this.#enterInFlightSession(session);
     try {
       if (optional && !this.#lookup(token)) return undefined;
       if (captors.length === 0) {
@@ -709,6 +730,7 @@ export class Container implements Disposable, AsyncDisposable {
         collector,
       );
     } finally {
+      this.#leaveInFlightSession(session);
       this.#endResolution(locked);
     }
   }
@@ -832,6 +854,7 @@ export class Container implements Disposable, AsyncDisposable {
     const session = context?.session ?? createResolutionSession();
     const ancestry = this.#resolutionAncestry(context, token);
     const locked = this.#beginResolution();
+    this.#enterInFlightSession(session);
     try {
       if (captors.length === 0) {
         const validated = chained
@@ -854,6 +877,7 @@ export class Container implements Disposable, AsyncDisposable {
         chained,
       );
     } finally {
+      this.#leaveInFlightSession(session);
       this.#endResolution(locked);
     }
   }
@@ -1002,11 +1026,10 @@ export class Container implements Disposable, AsyncDisposable {
   disposeAsync(): Promise<void> {
     const activeDisposalContext = disposalContext.getStore();
     const activeDisposal = activeDisposalContext?.operation;
-    const providerContext = resolutionContext.getStore();
-    const providerDisposal =
-      providerContext?.active === true
-        ? providerContext.container.#disposalOperation
-        : undefined;
+    const waiters = this.#activeProviderDisposals();
+    if (activeDisposal && !waiters.includes(activeDisposal)) {
+      waiters.push(activeDisposal);
+    }
     if (
       activeDisposal &&
       activeDisposalContext &&
@@ -1056,16 +1079,15 @@ export class Container implements Disposable, AsyncDisposable {
     }
     if (this.#lifecycle === "disposing-async") {
       const target = this.#disposalOperation;
-      const waiter = activeDisposal ?? providerDisposal;
-      if (waiter && target) {
-        if (waiter === target) {
+      if (target) {
+        if (waiters.includes(target)) {
           return Promise.reject(
             new TypeError("A provider cannot await its own container disposal."),
           );
         }
-        return waitForDisposal(waiter, target);
+        return this.#waitForProviderDisposal(waiters, target);
       }
-      return target?.promise ?? this.#disposePromise ?? Promise.resolve();
+      return this.#disposePromise ?? Promise.resolve();
     }
 
     let resolveDisposal!: () => void;
@@ -1077,6 +1099,7 @@ export class Container implements Disposable, AsyncDisposable {
     const operation: DisposalOperation = {
       owned: new Set(),
       waits: new Set(),
+      providerWaits: new Set(),
       nodeWaits: new Map(),
       errors: [],
       tasks: new Map(),
@@ -1084,16 +1107,27 @@ export class Container implements Disposable, AsyncDisposable {
     };
     const foreign = new Set<DisposalOperation>();
     this.#freezeAsyncTree(operation, foreign);
+    const providerTargets = this.#providerDisposalWaits(operation.owned);
+    const foreignWaits = [...foreign].map((pending) =>
+      waitForDisposals([operation], pending, undefined, false).catch((error) => {
+        appendDisposalError(operation.errors, error);
+      })
+    );
+    providerTargets.delete(operation);
+    for (const pending of foreign) providerTargets.delete(pending);
+    const providerCycle = linkDisposalWaits(
+      new Set([operation]),
+      providerTargets,
+      true,
+    );
+    if (providerCycle) {
+      appendDisposalError(operation.errors, providerCycle);
+    }
 
     const cleanup = disposalContext.run({ operation, path: [] }, async () => {
       await this.#waitForInFlight(operation.owned);
-      for (const pending of foreign) {
-        try {
-          await waitForDisposal(operation, pending);
-        } catch (error) {
-          appendDisposalError(operation.errors, error);
-        }
-      }
+      operation.providerWaits.clear();
+      if (foreignWaits.length > 0) await Promise.all(foreignWaits);
       await this.#disposeAsyncNode(operation);
       if (operation.errors.length > 0) {
         throw new AggregateError(
@@ -1104,10 +1138,7 @@ export class Container implements Disposable, AsyncDisposable {
     });
     void cleanup.then(resolveDisposal, rejectDisposal);
 
-    const waiter = activeDisposal ?? providerDisposal;
-    return waiter
-      ? waitForDisposal(waiter, operation)
-      : promise;
+    return this.#waitForProviderDisposal(waiters, operation);
   }
 
   /** Delegates explicit resource management to `dispose()`. */
@@ -1146,6 +1177,74 @@ export class Container implements Disposable, AsyncDisposable {
       }
     }
     return undefined;
+  }
+
+  #activeProviderDisposals(): DisposalOperation[] {
+    const operations: DisposalOperation[] = [];
+    for (
+      let context = resolutionContext.getStore();
+      context;
+      context = context.parent
+    ) {
+      if (!context.active) continue;
+      const operation = context.container.#disposalOperation;
+      if (operation && !operations.includes(operation)) {
+        operations.push(operation);
+      }
+      for (const waiting of sessionDisposals(context.session)) {
+        if (!operations.includes(waiting)) operations.push(waiting);
+      }
+    }
+    return operations;
+  }
+
+  #providerDisposalWaits(
+    owned: ReadonlySet<Container>,
+  ): Set<DisposalOperation> {
+    const targets = new Set<DisposalOperation>();
+    for (const container of owned) {
+      for (const session of container.#inFlightSessions.keys()) {
+        for (const target of sessionDisposalTargets(session)) {
+          targets.add(target);
+        }
+      }
+    }
+    return targets;
+  }
+
+  #waitForProviderDisposal(
+    waiters: readonly DisposalOperation[],
+    target: DisposalOperation,
+  ): Promise<void> {
+    if (waiters.length === 0) {
+      this.#recordProviderDisposal(target);
+      return target.promise;
+    }
+    return waitForDisposals(waiters, target, () => {
+      this.#recordProviderDisposal(target);
+    });
+  }
+
+  #recordProviderDisposal(target: DisposalOperation): void {
+    const sessions = new Set<ResolutionSession>();
+    for (
+      let context = resolutionContext.getStore();
+      context;
+      context = context.parent
+    ) {
+      if (!context.active || sessions.has(context.session)) continue;
+      sessions.add(context.session);
+      let targets = providerDisposalTargets.get(context.session);
+      if (!targets) {
+        targets = new Set();
+        providerDisposalTargets.set(context.session, targets);
+      }
+      if (!targets.has(target)) {
+        targets.add(target);
+        const cleanup = () => targets!.delete(target);
+        void target.promise.then(cleanup, cleanup);
+      }
+    }
   }
 
   #causalParent(): ResolutionContext | undefined {
@@ -1545,6 +1644,7 @@ export class Container implements Disposable, AsyncDisposable {
         this.#activeConstruction(),
         cached.producer,
         cached.promise,
+        () => startResolutionSessionWait(session, cached.session),
       );
       return waiting
         .finally(() => {
@@ -1641,6 +1741,7 @@ export class Container implements Disposable, AsyncDisposable {
           state: "pending",
           promise: tracked,
           producer: construction,
+          session,
           dynamicDependencies: collector,
         };
         cache.set(registration, entry);
@@ -2548,6 +2649,7 @@ export class Container implements Disposable, AsyncDisposable {
     this.#lifecycle = "disposing-async";
     this.#disposePromise = operation.promise;
     this.#disposalOperation = operation;
+    containerDisposals.set(this, operation);
     operation.owned.add(this);
     for (const child of this.#children) {
       child.#freezeAsyncTree(operation, foreign);
@@ -2646,6 +2748,10 @@ export class Container implements Disposable, AsyncDisposable {
     this.#clearValidation();
     this.#owned.length = 0;
     this.#inFlight.clear();
+    for (const session of this.#inFlightSessions.keys()) {
+      inFlightSessionContainers.get(session)?.delete(this);
+    }
+    this.#inFlightSessions.clear();
     for (const child of this.#children) {
       if (child.#parent === this) child.#parent = undefined;
     }
@@ -2657,6 +2763,7 @@ export class Container implements Disposable, AsyncDisposable {
     this.#lifecycle = "disposed";
     this.#disposePromise = undefined;
     this.#disposalOperation = undefined;
+    containerDisposals.delete(this);
     this.#syncDisposalOperation = undefined;
   }
 
@@ -2671,6 +2778,33 @@ export class Container implements Disposable, AsyncDisposable {
 
   #endResolution(locked: readonly Container[]): void {
     for (const container of locked) container.#activeResolutions -= 1;
+  }
+
+  #enterInFlightSession(session: ResolutionSession): void {
+    if (!this.#inFlightSessions.has(session)) {
+      let containers = inFlightSessionContainers.get(session);
+      if (!containers) {
+        containers = new Set();
+        inFlightSessionContainers.set(session, containers);
+      }
+      containers.add(this);
+    }
+    this.#inFlightSessions.set(
+      session,
+      (this.#inFlightSessions.get(session) ?? 0) + 1,
+    );
+  }
+
+  #leaveInFlightSession(session: ResolutionSession): void {
+    const count = this.#inFlightSessions.get(session);
+    if (count === 1) {
+      this.#inFlightSessions.delete(session);
+      const containers = inFlightSessionContainers.get(session);
+      containers?.delete(this);
+      if (containers?.size === 0) inFlightSessionContainers.delete(session);
+    } else if (count !== undefined) {
+      this.#inFlightSessions.set(session, count - 1);
+    }
   }
 
   #assertCanResolve(token: AnyToken): void {
@@ -2768,18 +2902,131 @@ function appendDisposalError(errors: unknown[], error: unknown): void {
   }
 }
 
-function waitForDisposal(
-  current: DisposalOperation,
-  target: DisposalOperation,
-): Promise<void> {
-  if (current === target) return Promise.resolve();
-  if (hasDisposalPath(target, current, new Set())) {
-    return Promise.reject(
-      new TypeError("Circular container disposal was rejected."),
-    );
+function startResolutionSessionWait(
+  current: ResolutionSession,
+  producer: ResolutionSession,
+): (() => void) | undefined {
+  if (current === producer) return undefined;
+  updateSessionWait(sessionDependencies, current, producer, 1);
+  updateSessionWait(sessionDependents, producer, current, 1);
+  const cycle = linkDisposalWaits(
+    sessionDisposals(current),
+    sessionDisposalTargets(producer),
+    true,
+  );
+  if (cycle) {
+    updateSessionWait(sessionDependencies, current, producer, -1);
+    updateSessionWait(sessionDependents, producer, current, -1);
+    throw cycle;
   }
-  current.waits.add(target);
-  return target.promise.finally(() => current.waits.delete(target));
+  return () => {
+    updateSessionWait(sessionDependencies, current, producer, -1);
+    updateSessionWait(sessionDependents, producer, current, -1);
+  };
+}
+
+function updateSessionWait(
+  graph: WeakMap<ResolutionSession, Map<ResolutionSession, number>>,
+  source: ResolutionSession,
+  target: ResolutionSession,
+  change: 1 | -1,
+): void {
+  let edges = graph.get(source);
+  if (change === 1) {
+    if (!edges) {
+      edges = new Map();
+      graph.set(source, edges);
+    }
+    edges.set(target, (edges.get(target) ?? 0) + 1);
+    return;
+  }
+  const count = edges?.get(target);
+  if (count === 1) edges!.delete(target);
+  else if (count !== undefined) edges!.set(target, count - 1);
+  if (edges?.size === 0) graph.delete(source);
+}
+
+function sessionDisposals(
+  root: ResolutionSession,
+): Set<DisposalOperation> {
+  const operations = new Set<DisposalOperation>();
+  const visited = new Set<ResolutionSession>();
+  const pending = [root];
+  while (pending.length > 0) {
+    const session = pending.pop()!;
+    if (visited.has(session)) continue;
+    visited.add(session);
+    for (const container of inFlightSessionContainers.get(session) ?? []) {
+      const operation = containerDisposals.get(container);
+      if (operation) operations.add(operation);
+    }
+    pending.push(...sessionDependents.get(session)?.keys() ?? []);
+  }
+  return operations;
+}
+
+function sessionDisposalTargets(
+  root: ResolutionSession,
+): Set<DisposalOperation> {
+  const targets = new Set<DisposalOperation>();
+  const visited = new Set<ResolutionSession>();
+  const pending = [root];
+  while (pending.length > 0) {
+    const session = pending.pop()!;
+    if (visited.has(session)) continue;
+    visited.add(session);
+    for (const target of providerDisposalTargets.get(session) ?? []) {
+      targets.add(target);
+    }
+    pending.push(...sessionDependencies.get(session)?.keys() ?? []);
+  }
+  return targets;
+}
+
+function linkDisposalWaits(
+  waiters: ReadonlySet<DisposalOperation>,
+  targets: ReadonlySet<DisposalOperation>,
+  provider = false,
+): TypeError | undefined {
+  if (waiters.size === 0 || targets.size === 0) return undefined;
+  for (const current of waiters) {
+    for (const target of targets) {
+      if (
+        current === target ||
+        hasDisposalPath(target, current, new Set())
+      ) {
+        return new TypeError("Circular container disposal was rejected.");
+      }
+    }
+  }
+  for (const target of targets) {
+    for (const current of waiters) {
+      (provider ? current.providerWaits : current.waits).add(target);
+    }
+    const cleanup = () => {
+      for (const current of waiters) {
+        (provider ? current.providerWaits : current.waits).delete(target);
+      }
+    };
+    void target.promise.then(cleanup, cleanup);
+  }
+  return undefined;
+}
+
+function waitForDisposals(
+  waiters: readonly DisposalOperation[],
+  target: DisposalOperation,
+  onWait?: () => void,
+  provider = true,
+): Promise<void> {
+  const cycle = linkDisposalWaits(
+    new Set(waiters),
+    new Set([target]),
+    provider,
+  );
+  if (cycle) return Promise.reject(cycle);
+  onWait?.();
+  return target.promise;
 }
 
 function waitForDisposalNode(
@@ -2837,6 +3084,9 @@ function hasDisposalPath(
   if (visited.has(current)) return false;
   visited.add(current);
   for (const dependency of current.waits) {
+    if (hasDisposalPath(dependency, target, visited)) return true;
+  }
+  for (const dependency of current.providerWaits) {
     if (hasDisposalPath(dependency, target, visited)) return true;
   }
   return false;

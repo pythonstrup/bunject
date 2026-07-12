@@ -95,6 +95,17 @@ container and the first ownership contract wins. Primitive handles with an
 explicit callback are tracked per activation. Disposal is last-in, first-out.
 Parent disposal freezes and drains the complete descendant tree; async disposal
 also waits for in-flight provider work and detects cross-container wait cycles.
+Disposal uses the same causal context chain as resolution. A live session graph
+connects callers that coalesce another session's pending provider, so disposal
+waits propagate in both temporal directions and across scope/owner boundaries.
+Construction and disposal edges are preflighted and installed atomically.
+Inactive frames, active ancestor providers, and later coalesced callers therefore
+cannot hide an outer wait edge or leave a rejected construction edge behind.
+A `disposeAsync()` call made during provider activation is conservatively causal
+even when its returned Promise is ignored; fire-and-forget disposal must start
+outside provider activation. Provider-derived edges are retired when the
+disposing tree finishes draining all in-flight provider work, before owned
+resource disposal begins.
 
 Mutation retires an old cache generation without destroying objects still held
 by callers. Retired resources remain owned and are cleaned when their container

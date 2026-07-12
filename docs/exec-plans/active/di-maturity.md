@@ -11,12 +11,12 @@ Ecosystem adoption and battle-testing remain external evidence.
 ## Current evidence
 
 - Bun 1.3.14 and minimum Bun 1.3.10 are configured.
-- The complete local merge gate passes: 203 tests and 11,090 assertions with
-  99.29% overall lines and 99.92% functions. The private-state Container and
-  every focused leaf retain 100% line coverage; the extracted resolution kernel
-  has 96.48% lines and 100% functions.
+- The complete local merge gate passes: 214 tests and 11,127 assertions with
+  99.34% overall lines and 99.85% functions. The private-state Container retains
+  99.92% line coverage; the extracted resolution kernel has 96.94% lines and
+  100% functions.
 - The runtime, public API, packaging, compatibility, and harness baseline is
-  committed and pushed through `ad20c86` on public `origin/main`.
+  committed and pushed on public `origin/main`.
 - The activation-scoped `resolver()` descriptor and provider-level cleanup
   adapters have focused, type, coverage, packed-consumer, and combined-gate
   evidence.
@@ -34,7 +34,7 @@ Ecosystem adoption and battle-testing remain external evidence.
   cycle, independent-family isolation, error-path, singleton-coalescing, scope,
   and disposal scenario under Bun and Node. Deno 2.0.0 and 2.8.1 pass type,
   standard-decorator, and runtime checks locally.
-- Bun 1.3.10 passes the source typecheck, all 203 tests, and the installed
+- Bun 1.3.10 passes the source typecheck, all 214 tests, and the installed
   packed-consumer smoke locally.
 - Container and Resolver optional sync/async resolution preserve every visible
   provider failure and track absent dynamic edges for cache invalidation.
@@ -112,7 +112,7 @@ Ecosystem adoption and battle-testing remain external evidence.
 - Hash the path and normalized content of every emitted declaration, and apply
   compressed-size budgets to the aggregate emitted JavaScript and declaration
   sets so modularization cannot bypass the existing gates.
-- Use reviewed aggregate gzip ceilings of 17 KiB for runtime JavaScript and
+- Use reviewed aggregate gzip ceilings of 19 KiB for runtime JavaScript and
   7 KiB for declarations. They cover module framing and compressor variation
   while remaining small enough to catch material growth.
 - Keep each source module's `@ts-self-types` link aligned with its emitted
@@ -392,6 +392,27 @@ Ecosystem adoption and battle-testing remain external evidence.
 - 2026-07-12: three independent final reviews found no remaining P0-P2
   correctness, minimality, performance, documentation, or packed-runtime issue
   after the complete current/minimum Bun, Node, Deno, and repository gates.
+- 2026-07-12: reproduced a mixed resolution/disposal deadlock where an inactive
+  nested provider frame hid its active outer provider and removed a disposal
+  wait edge. A second adversarial topology showed that an active provider in a
+  non-disposing ancestor could do the same. `disposeAsync()` now preserves every
+  unique active causal provider operation and registers their wait edges
+  atomically; both regressions passed 20 deterministic reruns and the common
+  Bun/Node/Deno packed-runtime smoke.
+- 2026-07-12: passed the updated 214-test gate with 11,127 assertions. The final
+  mixed wait graph covers inactive/ancestor contexts, scope/owner mismatches,
+  both temporal directions, cross-session coalescing, multi-hop/refcount
+  propagation, and atomic rollback when disposal preflight rejects a
+  construction join. The shared packed smoke exercises a coalesced-session
+  cycle under Bun, Node, Deno 2.0.0, and Deno 2.8.1; Bun 1.3.10 passes all tests
+  and the installed packed consumer. Public declarations remain unchanged.
+- 2026-07-12: provider-derived wait edges are isolated from disposer/ownership
+  edges and retired after the complete in-flight provider drain. This preserves
+  conservative fire-and-forget cycle safety while preventing a completed
+  provider from poisoning later owned-resource disposal waits.
+- 2026-07-12: the causal session graph raises reviewed runtime output to 18,697
+  gzip bytes, so the runtime ceiling is now 19 KiB; declarations remain 6,909
+  gzip bytes under the existing 7 KiB ceiling.
 
 [first-public-ci]: https://github.com/pythonstrup/bunject/actions/runs/29155458515
 [second-public-ci]: https://github.com/pythonstrup/bunject/actions/runs/29176357356
